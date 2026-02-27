@@ -22,9 +22,9 @@ This folder was generated from the current live server state and cleaned for sou
 1. Confirm the target repository is private for the first push.
 2. Review `.env.example`, `.env.prod.example`, `davarna-bot/.env.example`, and `davarna-bot/.env.prod.example`.
 3. Do not add `E:\DAVARNA_DB_PRIVATE_20260228_012302.sql.gz` to Git.
-4. Review `README.md`, `DEPLOYMENT.md`, and `PRE_PUSH_CHECKLIST.md`.
+4. Review `README.md`, `DEPLOYMENT.md`, `PRE_PUSH_CHECKLIST.md`, and `RELEASE_COMPOSE_REVIEW.md`.
 
-## Git Commands
+## Git Commands (Private Repository First)
 
 Run these inside this folder:
 
@@ -40,6 +40,31 @@ If `origin` already exists:
 ```bash
 git remote set-url origin <YOUR_PRIVATE_GITHUB_REPO_URL>
 git push -u origin main
+```
+
+## Git Commands (Optional Public Release Later)
+
+Only after a second review:
+
+```bash
+git remote set-url origin <YOUR_PUBLIC_GITHUB_REPO_URL>
+git push -u origin main
+```
+
+If you want to keep both remotes:
+
+```bash
+git remote rename origin private
+git remote add origin <YOUR_PUBLIC_GITHUB_REPO_URL>
+git push -u origin main
+```
+
+## Exact Command Template
+
+Replace the placeholder with your real repository URL:
+
+```bash
+git remote add origin https://github.com/<YOUR_USERNAME>/<YOUR_REPOSITORY>.git
 ```
 
 ## Deploy Reminder
