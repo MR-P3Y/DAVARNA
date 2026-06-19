@@ -1,0 +1,80 @@
+*** Begin Patch
+*** Update File: backend/app/static/mini/index.html
+@@
+   <nav class="tabs">
+     <button id="gamesTab" class="tab-btn active">بازی‌ها</button>
+     <button id="cardsTab" class="tab-btn">کارت‌های من</button>
++    <!-- Help button to open game guide -->
++    <button id="helpBtn" class="tab-btn">راهنما</button>
+   </nav>
+@@
+   <!-- existing modals here -->
++  <!-- Help Modal: shows a brief guide explaining how to play -->
++  <div id="helpModal" class="modal hidden">
++    <div class="modal-content">
++      <h2>راهنمای بازی</h2>
++      <p>در این بازی دبرنا، با خرید کارت و شرکت در قرعه‌کشی می‌توانید برنده جوایز شوید. اعداد روی کارت‌ها از چپ به راست نمایش داده می‌شوند. هر زمان که عددی اعلام شود، اگر در کارت شما باشد، آن را علامت بزنید. با پر شدن سطر یا ستون، برنده می‌شوید.</p>
++      <p>در صورت نیاز به راهنمایی بیشتر، می‌توانید با پشتیبانی تماس بگیرید.</p>
++      <button id="helpCloseBtn" class="small-btn">بستن</button>
++    </div>
++  </div>
+*** End Patch
+*** Begin Patch
+*** Update File: backend/app/static/mini/styles.css
+@@
+ .modal {
+   position: fixed;
+   top: 0;
+   left: 0;
+   width: 100%;
+   height: 100%;
+   display: flex;
+   justify-content: center;
+   align-items: center;
+   background-color: rgba(0, 0, 0, 0.5);
+   z-index: 1000;
++  /* hide modal by default */
++  visibility: hidden;
+ }
++.modal.hidden {
++  visibility: hidden;
++}
++.modal:not(.hidden) {
++  visibility: visible;
++}
++.modal-content {
++  background-color: #fff;
++  padding: 20px;
++  border-radius: 8px;
++  max-width: 90%;
++  max-height: 80%;
++  overflow-y: auto;
++}
+*** End Patch
+*** Begin Patch
+*** Update File: backend/app/static/mini/app.js
+@@
+ function init() {
+   // existing initialization code
++  initHelpModal();
+ }
++
++/**
++ * Initialize the help modal and attach click handlers.
++ * When the user clicks the "راهنما" button, the modal will appear.
++ * When the user clicks "بستن", the modal will be hidden.
++ */
++function initHelpModal() {
++  const helpBtn = document.getElementById("helpBtn");
++  const helpModal = document.getElementById("helpModal");
++  const helpCloseBtn = document.getElementById("helpCloseBtn");
++  if (helpBtn && helpModal) {
++    helpBtn.addEventListener("click", () => {
++      helpModal.classList.remove("hidden");
++    });
++    helpCloseBtn?.addEventListener("click", () => {
++      helpModal.classList.add("hidden");
++    });
++  }
++}
+*** End Patch
