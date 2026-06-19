@@ -2022,65 +2022,73 @@ async function openHistoryModalForGame(gameId, { cardId = 0, source = "history" 
   modal.classList.add("open");
   modal.setAttribute("aria-hidden", "false");
 
-  const [snapshot, cardsPayload] = await Promise.all([
-    apiFetch(`/mini-api/games/${gid}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`),
-    apiFetch(`/mini-api/me/cards?game_id=${gid}&limit=200`),
-  ]);
+  try {
+    const [snapshot, cardsPayload] = await Promise.all([
+      apiFetch(`/mini-api/games/${gid}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`),
+      apiFetch(`/mini-api/me/cards?game_id=${gid}&limit=200`),
+    ]);
 
-  const cards = Array.isArray(cardsPayload?.items) ? cardsPayload.items : [];
-  const targetCards = Number(cardId || 0) > 0
-    ? cards.filter((c) => Number(c?.card_id || 0) === Number(cardId))
-    : cards;
-  const shownCards = targetCards.slice(0, HISTORY_LIST_LIMIT);
+    const cards = Array.isArray(cardsPayload?.items) ? cardsPayload.items : [];
+    const targetCards = Number(cardId || 0) > 0
+      ? cards.filter((c) => Number(c?.card_id || 0) === Number(cardId))
+      : cards;
+    const shownCards = targetCards.slice(0, HISTORY_LIST_LIMIT);
 
-  const st = snapshot?.state || {};
-  const calledNumbers = Array.isArray(st.called_numbers)
-    ? st.called_numbers.map((x) => Number(x)).filter((x) => Number.isFinite(x))
-    : [];
-  const calledSet = new Set(calledNumbers);
-  const rowWinnerSet = new Set((st.row_winner_card_ids || []).map((x) => Number(x)));
-  const colWinnerSet = new Set((st.col_winner_card_ids || []).map((x) => Number(x)));
+    const st = snapshot?.state || {};
+    const calledNumbers = Array.isArray(st.called_numbers)
+      ? st.called_numbers.map((x) => Number(x)).filter((x) => Number.isFinite(x))
+      : [];
+    const calledSet = new Set(calledNumbers);
+    const rowWinnerSet = new Set((st.row_winner_card_ids || []).map((x) => Number(x)));
+    const colWinnerSet = new Set((st.col_winner_card_ids || []).map((x) => Number(x)));
 
-  titleEl.textContent = source === "wins" ? `جزئیات برد بازی #${gid}` : `جزئیات کارت‌های بازی #${gid}`;
-  metaEl.textContent = `وضعیت: ${statusLabel(st.status || snapshot?.game?.status)} | اعداد اعلام‌شده: ${calledNumbers.length}`;
+    titleEl.textContent = source === "wins" ? `جزئیات برد بازی #${gid}` : `جزئیات کارت‌های بازی #${gid}`;
+    metaEl.textContent = `وضعیت: ${statusLabel(st.status || snapshot?.game?.status)} | اعداد اعلام‌شده: ${calledNumbers.length}`;
 
-  if (!shownCards.length) {
-    bodyEl.innerHTML = '<div class="empty">کارتی برای نمایش در این بازی پیدا نشد.</div>';
-    return;
-  }
+    if (!shownCards.length) {
+      bodyEl.innerHTML = '<div class="empty">کارتی برای نمایش در این بازی پیدا نشد.</div>';
+      return;
+    }
 
-  const head = `
-    <div class="history-modal-head">
-      آخرین عدد: <strong>${safeText(st.last_number ?? "-")}</strong> |
-      مجموع جایزه: <strong>${safeText(toman((st.prize_pool ?? snapshot?.game?.prize_pool ?? 0)))}</strong>
-    </div>
-  `;
+    const head = `
+      <div class="history-modal-head">
+        آخرین عدد: <strong>${safeText(st.last_number ?? "-")}</strong> |
+        مجموع جایزه: <strong>${safeText(toman((st.prize_pool ?? snapshot?.game?.prize_pool ?? 0)))}</strong>
+      </div>
+    `;
 
-  const cardsHtml = shownCards
-    .map((c) => {
-      const nums = Array.isArray(c?.numbers) ? c.numbers : [];
-      const isRowWinner = rowWinnerSet.has(Number(c.card_id || 0));
-      const isColWinner = colWinnerSet.has(Number(c.card_id || 0));
-      const winnerCells = calcWinnerCellIndices(nums, calledSet, { row: isRowWinner, col: isColWinner });
-      const winnerLabel = winnerKindLabelByFlags({ row: isRowWinner, col: isColWinner });
-      const resultText = winnerLabel ? `اعلام برنده: ${winnerLabel}` : "اعلام برنده: هنوز ثبت نشده";
-      return `
-        <div class="history-modal-card-item">
-          <div class="card-pro-head">
-            <span class="card-id-stack"><strong>کارت #${safeText(c.card_id)}</strong><em>بازی #${g.gameId}</em></span><span class="card-game-badge">بازی #${g.gameId}</span>
-            <span>${safeText(String(c.created_at || "-"))}</span>
+    const cardsHtml = shownCards
+      .map((c) => {
+        const nums = Array.isArray(c?.numbers) ? c.numbers : [];
+        const isRowWinner = rowWinnerSet.has(Number(c.card_id || 0));
+        const isColWinner = colWinnerSet.has(Number(c.card_id || 0));
+        const winnerCells = calcWinnerCellIndices(nums, calledSet, { row: isRowWinner, col: isColWinner });
+        const winnerLabel = winnerKindLabelByFlags({ row: isRowWinner, col: isColWinner });
+        const resultText = winnerLabel ? `اعلام برنده: ${winnerLabel}` : "اعلام برنده: هنوز ثبت نشده";
+        return `
+          <div class="history-modal-card-item">
+            <div class="card-pro-head">
+              <span class="card-id-stack"><strong>کارت #${safeText(c.card_id)}</strong><em>بازی #${gid}</em></span>
+              <span class="card-game-badge">بازی #${gid}</span>
+              <span>${safeText(String(c.created_at || "-"))}</span>
+            </div>
+            ${winnerLabel ? `<span class="winner-kind-pill">${safeText(winnerLabel)}</span>` : ""}
+            <div class="history-modal-result">${safeText(resultText)}</div>
+            <div class="mini-card-grid">${buildCardGrid(nums, calledSet, new Set(), winnerCells)}</div>
           </div>
-          ${winnerLabel ? `<span class="winner-kind-pill">${safeText(winnerLabel)}</span>` : ""}
-          <div class="history-modal-result">${safeText(resultText)}</div>
-          <div class="mini-card-grid">${buildCardGrid(nums, calledSet, new Set(), winnerCells)}</div>
-        </div>
-      `;
-    })
-    .join("");
+        `;
+      })
+      .join("");
 
-  bodyEl.innerHTML = `${head}<div class="history-modal-grid">${cardsHtml}</div>`;
+    bodyEl.innerHTML = `${head}<div class="history-modal-grid">${cardsHtml}</div>`;
+  } catch (err) {
+    const msg = localizeApiError(err?.message || err || "خطای بارگذاری جزئیات");
+    titleEl.textContent = source === "wins" ? `جزئیات برد بازی #${gid}` : `جزئیات کارت‌های بازی #${gid}`;
+    metaEl.textContent = "بارگذاری ناموفق";
+    bodyEl.innerHTML = `<div class="empty">جزئیات کارت‌ها بارگذاری نشد. ${safeText(msg)}</div>`;
+    setBadge("error", msg);
+  }
 }
-
 function groupCardsByGame(items) {
   const out = new Map();
   for (const item of items || []) {
