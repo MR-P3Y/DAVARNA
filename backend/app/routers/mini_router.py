@@ -1906,7 +1906,8 @@ def mini_admin_create_game(
     if len(idem_key) < 6:
         raise HTTPException(status_code=400, detail="کلید یکتای عملیات نامعتبر است.")
 
-    idem_digest = hashlib.sha256(idem_key.encode("utf-8")).hexdigest()
+    # app_settings.k is intentionally short in production; keep this idempotency key below the DB column limit.
+    idem_digest = hashlib.sha256(idem_key.encode("utf-8")).hexdigest()[:40]
     idem_setting_key = f"mini_acg:{idem_digest}"
     existing = _setting_get_json(db, idem_setting_key)
     if isinstance(existing, dict):
