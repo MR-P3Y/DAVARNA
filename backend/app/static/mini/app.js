@@ -1011,8 +1011,8 @@ function drawGames(items) {
   if (hotBanner) {
     const hotId = Number(state.hotGameId || 0);
     if (hotId > 0) {
-      hotBanner.classList.remove("hidden");
-      hotBanner.textContent = `🔥 بازی داغ: بازی #${hotId} در حال جذب بازیکن است`;
+      hotBanner.classList.add("hidden");
+      hotBanner.textContent = "";
     } else {
       hotBanner.classList.add("hidden");
       hotBanner.textContent = "";
@@ -1030,7 +1030,7 @@ function drawGames(items) {
       const soldCards = soldCardsCount(g, snap);
       const players = playersCount(g, snap);
       const progress = Math.max(0, Math.min(100, Math.round((soldCards / maxSold) * 100)));
-      const hot = Number(state.hotGameId || 0) === gid;
+      const hot = false;
       const statusClass = isRunning ? "running" : "lobby";
       const runningBanner = isRunning
         ? '<div class="running-banner">🔴 بازی در حال اجراست</div>'
@@ -1045,7 +1045,7 @@ function drawGames(items) {
           <h3>بازی #${gid}</h3>
           <span class="game-state ${statusClass}">${safeText(statusLabel(g.status))}</span>
         </div>
-        ${hot ? '<div class="winner-kind-pill">🔥 بازی داغ است</div>' : ""}
+
         <div class="game-kpis">
           <div class="kpi"><div class="label">کارت فروخته‌شده</div><div class="value">${safeText(soldCards)}</div></div>
           <div class="kpi"><div class="label">بازیکنان فعلی</div><div class="value">${safeText(players)}</div></div>
@@ -1665,7 +1665,7 @@ async function refreshGames() {
   }
 
   if (insights) {
-    state.hotGameId = Number(insights?.hot_game_id || 0) || null;
+    state.hotGameId = null;
     state.userFlags.inGame = Boolean(insights?.in_game);
     state.userFlags.recentWinner = Boolean(insights?.recent_winner);
     state.recentGamesStats = Array.isArray(insights?.recent_games) ? insights.recent_games : [];
