@@ -2750,3 +2750,197 @@ html[data-theme="light"] .mini-toast {
     font-size: 30px;
   }
 }
+
+/* UX2 live cards polish v2 */
+#view-games,
+#view-cards,
+#view-wallet,
+#view-admin {
+  padding-bottom: calc(118px + env(safe-area-inset-bottom));
+}
+
+.cards-panel {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+
+.game-emphasis-block {
+  border-color: rgba(255, 213, 111, 0.42);
+  background:
+    radial-gradient(circle at 88% 0%, rgba(255, 213, 111, 0.20), transparent 35%),
+    linear-gradient(155deg, rgba(100, 214, 255, 0.10), rgba(255, 255, 255, 0.045));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14);
+}
+
+.active-game-title {
+  display: grid;
+  gap: 2px;
+  align-items: center;
+}
+
+.active-game-title-label {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.active-game-title-id {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 74px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 22px;
+  font-weight: 950;
+  letter-spacing: 0.4px;
+  color: #fff7d6;
+  border: 1px solid rgba(255, 213, 111, 0.58);
+  background: linear-gradient(135deg, rgba(255, 195, 55, 0.32), rgba(100, 214, 255, 0.16));
+  box-shadow: 0 0 0 1px rgba(255, 213, 111, 0.18), 0 10px 28px rgba(255, 195, 55, 0.14);
+}
+
+.card-pro-head-ux2 {
+  align-items: flex-start;
+}
+
+.card-id-stack {
+  display: grid;
+  gap: 2px;
+}
+
+.card-id-stack strong {
+  font-size: 13px;
+}
+
+.card-id-stack em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.card-game-badge,
+.history-game-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+  color: #fff5d0;
+  border: 1px solid rgba(255, 213, 111, 0.58);
+  background: linear-gradient(135deg, rgba(255, 195, 55, 0.30), rgba(255, 255, 255, 0.06));
+}
+
+.card-progress-ux2 {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.history-game-badge {
+  width: fit-content;
+  margin-bottom: 5px;
+}
+
+.live-main-pro {
+  background:
+    radial-gradient(circle at 80% 0%, rgba(45, 212, 191, 0.18), transparent 36%),
+    rgba(255, 255, 255, 0.035);
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.live-main-pro .live-last-wrap {
+  min-width: 92px;
+  text-align: center;
+}
+
+.live-main-pro .last-number-pop {
+  min-width: 76px;
+  min-height: 76px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22px;
+  font-size: 34px;
+  font-weight: 950;
+  color: #fff7d6;
+  border-color: rgba(255, 213, 111, 0.58);
+  background: linear-gradient(145deg, rgba(255, 195, 55, 0.28), rgba(45, 212, 191, 0.12));
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.20), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.live-called-chip,
+.called-chip {
+  font-weight: 850;
+}
+
+.live-called-chip.fresh,
+.called-chip.new,
+.num-chip.fresh {
+  animation: pulseFresh 1.1s ease;
+}
+
+@media (max-width: 430px) {
+  .active-game-head {
+    align-items: flex-start;
+  }
+
+  .active-game-title-id {
+    font-size: 20px;
+    min-width: 66px;
+  }
+
+  .active-game-meta {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .cards-active-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .live-main-pro .last-number-pop {
+    min-width: 68px;
+    min-height: 68px;
+    font-size: 30px;
+  }
+}
+
+html[data-theme="light"] .active-game-title-id,
+html[data-theme="light"] .card-game-badge,
+html[data-theme="light"] .history-game-badge {
+  color: #6b4100;
+  border-color: rgba(174, 112, 17, 0.34);
+  background: linear-gradient(135deg, rgba(255, 214, 116, 0.72), rgba(255, 255, 255, 0.50));
+}
+
+html[data-theme="light"] .live-main-pro .last-number-pop {
+  color: #5b3500;
+  background: linear-gradient(145deg, rgba(255, 214, 116, 0.78), rgba(225, 246, 250, 0.72));
+}
+
+/* UX2 v3 game number focus */
+.active-game-block.game-emphasis-block {
+  position: relative;
+  overflow: hidden;
+}
+
+.active-game-title-id {
+  text-shadow: 0 2px 14px rgba(255, 213, 111, 0.25);
+}
+
+.card-game-badge {
+  box-shadow: 0 0 0 1px rgba(255, 213, 111, 0.12);
+}
+
+.card-id-stack {
+  min-width: 0;
+}
+
+.card-progress-ux2 {
+  margin-bottom: 8px;
+}

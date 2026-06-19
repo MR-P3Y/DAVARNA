@@ -1,4 +1,4 @@
-﻿const tg = window.Telegram?.WebApp;
+const tg = window.Telegram?.WebApp;
 
 const state = {
   token: null,
@@ -1379,22 +1379,20 @@ function renderLiveInsights(st) {
   const root = getEl("liveInsights");
   if (!root) return;
   const remain = Number(st?.remaining_players_estimate || 0);
-  const nearest = st?.nearest_to_win || {};
-  const nearestText = Number(nearest?.percent || 0) > 0
-    ? `${nearest.percent}% | ${nearest.missing} عدد مانده`
-    : "-";
+  const calledCount = Number(st?.called_count || (Array.isArray(st?.called_numbers) ? st.called_numbers.length : 0));
+  const progress = Number(st?.called_progress_pct || 0);
   root.innerHTML = `
     <div class="live-insight">
       <div class="k">بازیکنان باقی‌مانده</div>
-      <div class="v">${safeText(remain)}</div>
+      <div class="v">${safeText(remain || "-")}</div>
     </div>
     <div class="live-insight">
-      <div class="k">نزدیک‌ترین کارت به برد</div>
-      <div class="v">${safeText(nearestText)}</div>
+      <div class="k">اعداد اعلام‌شده</div>
+      <div class="v">${safeText(calledCount)}</div>
     </div>
     <div class="live-insight">
       <div class="k">درصد پیشرفت بازی</div>
-      <div class="v">${safeText(st?.called_progress_pct || 0)}%</div>
+      <div class="v">${safeText(progress)}%</div>
     </div>
   `;
 }
@@ -1495,7 +1493,7 @@ function renderLive(snapshot) {
   }
 
   const called = Array.isArray(st.called_numbers) ? st.called_numbers : [];
-  const tailNumbers = called.slice(-28);
+  const tailNumbers = called.slice(-45);
   const lastNow = st.last_number ?? (called.length ? called[called.length - 1] : null);
   const prevLast = state.latestLiveNumberByGame[Number(game.id)];
   const lastFresh = prevLast !== undefined && prevLast !== null && Number(lastNow) !== Number(prevLast);
@@ -1512,7 +1510,7 @@ function renderLive(snapshot) {
 
   stateBox.innerHTML = `
     <div id="liveWinnerBanner"></div>
-    <div class="live-main">
+    <div class="live-main live-main-pro">
       <div class="live-top">
         <div>
           <div>وضعیت: <strong>${safeText(statusLabel(st.status || game.status))}</strong></div>
@@ -1904,7 +1902,7 @@ function renderCardsActive(activeGames) {
       const calledTail = (g.calledNumbers || []).slice(-20);
       const calledTailText = calledTail.length ? calledTail.join("\u060c ") : "\u0647\u0646\u0648\u0632 \u0639\u062f\u062f\u06cc \u0627\u0639\u0644\u0627\u0645 \u0646\u0634\u062f\u0647";
       return `
-        <div class="active-game-block">
+        <div class="active-game-block game-emphasis-block">
           <div class="active-game-head">
             <h4>\u0628\u0627\u0632\u06cc #${g.gameId}</h4>
             <div class="active-game-meta">
@@ -2069,7 +2067,7 @@ async function openHistoryModalForGame(gameId, { cardId = 0, source = "history" 
       return `
         <div class="history-modal-card-item">
           <div class="card-pro-head">
-            <strong>کارت #${safeText(c.card_id)}</strong>
+            <span class="card-id-stack"><strong>کارت #${safeText(c.card_id)}</strong><em>بازی #${g.gameId}</em></span><span class="card-game-badge">بازی #${g.gameId}</span>
             <span>${safeText(String(c.created_at || "-"))}</span>
           </div>
           ${winnerLabel ? `<span class="winner-kind-pill">${safeText(winnerLabel)}</span>` : ""}
