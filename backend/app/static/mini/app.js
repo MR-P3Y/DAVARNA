@@ -2691,13 +2691,52 @@ function setAdminSelectedGame(gameId, statusText = "") {
   if (!meta) return;
   if (!state.admin.selectedGameId) {
     meta.textContent = "هیچ بازی انتخاب نشده";
+    updateAdminActionButtons();
     return;
   }
   meta.textContent = statusText
     ? `بازی #${state.admin.selectedGameId} | ${statusText}`
     : `بازی #${state.admin.selectedGameId}`;
   syncAdminCreateFormFromGame(state.admin.selectedGameId);
+  updateAdminActionButtons();
 }
+
+function updateAdminActionButtons() {
+  const gid = Number(state.admin?.selectedGameId || 0);
+  const g = gid ? getAdminGameById(gid) : null;
+  const status = String(g?.status || "").toUpperCase();
+
+  const setBtn = (id, enabled, title) => {
+    const btn = getEl(id);
+    if (!btn) return;
+    btn.disabled = !enabled;
+    btn.classList.toggle("is-disabled", !enabled);
+    if (title) btn.setAttribute("title", title);
+    else btn.removeAttribute("title");
+  };
+
+  const hasGame = gid > 0;
+  const isLobby = status === "LOBBY";
+  const isRunning = status === "RUNNING";
+
+  setBtn("adminStartBtn", hasGame && isLobby, hasGame ? "شروع فقط برای بازی در لابی فعال است." : "ابتدا بازی را انتخاب کنید.");
+  setBtn("adminCloseLobbyBtn", hasGame && isLobby, hasGame ? "لغو فقط پیش از شروع بازی مجاز است." : "ابتدا بازی را انتخاب کنید.");
+  setBtn("adminCallBtn", hasGame && isRunning, hasGame ? "اعلام عدد فقط برای بازی در حال اجرا مجاز است." : "ابتدا بازی را انتخاب کنید.");
+  setBtn("adminUndoBtn", hasGame && isRunning, hasGame ? "حذف آخرین عدد فقط برای بازی در حال اجرا مجاز است." : "ابتدا بازی را انتخاب کنید.");
+}
+
+function requireAdminGameStatus(allowedStatuses, actionLabel) {
+  const gid = requireAdminSelectedGame();
+  const g = getAdminGameById(gid);
+  const status = String(g?.status || "").toUpperCase();
+  const allowed = new Set((allowedStatuses || []).map((x) => String(x).toUpperCase()));
+  if (allowed.size && !allowed.has(status)) {
+    const current = status ? statusLabel(status) : "نامشخص";
+    throw new Error(`${actionLabel} برای وضعیت فعلی بازی مجاز نیست. وضعیت فعلی: ${current}`);
+  }
+  return { gid, game: g, status };
+}
+
 
 async function refreshAdminBootstrap() {
   try {
@@ -2801,6 +2840,7 @@ async function refreshAdminGames() {
   const qs = groupId != null ? `&tg_group_id=${encodeURIComponent(String(groupId))}` : "";
   const out = await apiFetch(`/mini-api/admin/games?status=LOBBY,RUNNING&limit=40${qs}`);
   renderAdminGames(out);
+  updateAdminActionButtons();
 }
 
 function renderAdminDeposits(payload) {
@@ -3547,7 +3587,7 @@ async function adminCreateGame() {
 }
 
 async function adminStartGame() {
-  const gid = requireAdminSelectedGame();
+  const { gid } = requireAdminGameStatus(["LOBBY"], "شروع بازی");
   setHint("adminActionHint", "در حال شروع بازی...");
   await apiFetch(`/mini-api/admin/games/${gid}/start`, {
     method: "POST",
@@ -3558,7 +3598,7 @@ async function adminStartGame() {
 }
 
 async function adminCallNumber() {
-  const gid = requireAdminSelectedGame();
+  const { gid } = requireAdminGameStatus(["RUNNING"], "اعلام عدد");
   const number = Number(getVal("adminCallNumberInput") || "0");
   if (!number || number < 1 || number > 99) throw new Error("عدد اعلام باید بین 1 تا 99 باشد.");
   setHint("adminActionHint", "در حال ثبت عدد...");
@@ -3572,7 +3612,7 @@ async function adminCallNumber() {
 }
 
 async function adminUndoCall() {
-  const gid = requireAdminSelectedGame();
+  const { gid } = requireAdminGameStatus(["RUNNING"], "حذف آخرین عدد");
   setHint("adminActionHint", "در حال Undo آخرین عدد...");
   await apiFetch(`/mini-api/admin/games/${gid}/undo-last-call`, {
     method: "POST",
@@ -3583,7 +3623,7 @@ async function adminUndoCall() {
 }
 
 async function adminCloseLobby() {
-  const gid = requireAdminSelectedGame();
+  const { gid } = requireAdminGameStatus(["LOBBY"], "لغو لابی");
   const reason = getVal("adminCancelReasonInput");
   if (!reason || reason.length < 3) throw new Error("علت لغو باید حداقل 3 کاراکتر باشد.");
   setHint("adminActionHint", "در حال لغو بازی لابی...");

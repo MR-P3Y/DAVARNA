@@ -3150,3 +3150,140 @@ html[data-theme="light"] .live-main-pro .last-number-pop {
     gap: 10px;
   }
 }
+
+/* UX 3 admin game panel polish */
+#view-admin .accordion-item {
+  border: 1px solid rgba(120, 167, 255, 0.22);
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(255,255,255,0.045), rgba(255,255,255,0.018));
+}
+
+#view-admin .accordion-item > summary {
+  min-height: 48px;
+  padding: 13px 14px;
+  font-weight: 900;
+}
+
+#view-admin .form-card,
+#view-admin .admin-section,
+#view-admin .panel-card {
+  border-radius: 18px;
+}
+
+#adminSelectedGameMeta {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px 0 10px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 213, 111, 0.34);
+  background: rgba(255, 213, 111, 0.08);
+  color: #ffe082;
+  font-weight: 900;
+  line-height: 1.7;
+}
+
+#adminCreateTopics,
+#adminPricePresetRow {
+  gap: 8px;
+}
+
+#adminCreateTopics .topic-chip,
+#adminPricePresetRow .price-chip {
+  min-height: 38px;
+  border-radius: 999px;
+  font-weight: 850;
+}
+
+#adminCreateTopics .topic-chip.active,
+#adminPricePresetRow .price-chip.active {
+  box-shadow: 0 0 0 1px rgba(255, 213, 111, 0.25), 0 10px 22px rgba(0,0,0,0.16);
+}
+
+#adminGamesList .history-item {
+  position: relative;
+  border-radius: 16px;
+  border-color: rgba(120, 167, 255, 0.24);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(45, 212, 191, 0.10), transparent 34%),
+    rgba(255, 255, 255, 0.032);
+}
+
+#adminGamesList .history-item.clickable {
+  cursor: pointer;
+}
+
+#adminGamesList .history-item.clickable:active {
+  transform: scale(0.992);
+}
+
+#adminActionHint,
+#adminCreateHintMsg {
+  border-radius: 14px;
+  padding: 9px 11px;
+  line-height: 1.8;
+}
+
+#adminCallNumberInput,
+#adminCancelReasonInput,
+#adminLiveLinkInput,
+#adminCreateCardPriceInput,
+#adminCreateGroupIdInput,
+#adminCreateTopicIdInput {
+  min-height: 42px;
+  border-radius: 13px;
+}
+
+#adminStartBtn,
+#adminCallBtn,
+#adminUndoBtn,
+#adminCloseLobbyBtn,
+#adminSetLiveBtn,
+#adminClearLiveBtn,
+#adminCreateBtn {
+  min-height: 42px;
+  border-radius: 14px;
+  font-weight: 900;
+}
+
+#view-admin button.is-disabled,
+#view-admin button:disabled {
+  opacity: 0.46;
+  filter: grayscale(0.35);
+  cursor: not-allowed;
+}
+
+#adminCallBtn:not(:disabled) {
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.18);
+}
+
+#adminCloseLobbyBtn:not(:disabled) {
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.18);
+}
+
+@media (max-width: 430px) {
+  #view-admin .accordion-item > summary {
+    padding: 12px;
+  }
+
+  #adminSelectedGameMeta {
+    font-size: 12px;
+    white-space: normal;
+  }
+
+  #adminGamesList .history-item {
+    padding: 12px;
+  }
+
+  #adminStartBtn,
+  #adminCallBtn,
+  #adminUndoBtn,
+  #adminCloseLobbyBtn,
+  #adminSetLiveBtn,
+  #adminClearLiveBtn,
+  #adminCreateBtn {
+    min-height: 44px;
+  }
+}
