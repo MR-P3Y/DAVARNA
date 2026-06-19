@@ -960,13 +960,22 @@ function drawGames(items) {
       const gameId = Number(btn.getAttribute("data-game-id") || "0");
       if (!gameId) return;
       const myCardsCount = Number(state.myCardsByGame.get(gameId) || 0);
-      // اگر کارتی خریده شده باشد، به تب کارت‌ها برو
+
       if (myCardsCount > 0) {
-        state.selectedGameId = gameId;    // برای نمایش کارت‌های همین بازی
+        // کاربر قبلاً کارت خریده: تب کارت‌ها را باز کن
+        state.selectedGameId = gameId;
         switchToView("cards");
       } else {
-        // در غیر این صورت بازی زنده را باز کن تا فرم خرید کارت فعال شود
-        openLiveGame(gameId).catch((err) => setBadge("error", err.message));
+        // کاربر کارت ندارد: بازی را باز کن و سپس به بخش وضعیت زنده اسکرول کن
+        openLiveGame(gameId)
+          .then(() => {
+            // اسکرول نرم به ابتدای بخش وضعیت زنده بازی
+            const liveTitle = document.getElementById("liveTitle");
+            if (liveTitle) {
+              liveTitle.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          })
+          .catch((err) => setBadge("error", err.message));
       }
     });
   });
