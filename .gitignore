@@ -1,22 +1,55 @@
-# Secrets
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Real environment / secrets
 .env
 .env.*
 !.env.example
 !.env.prod.example
+!*.env.example
+!*.env.prod.example
 
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-
-# Runtime data
-storage/
-backend/storage/
-davarna-bot/storage/
+# Runtime data and backups
+storage/receipts/
+storage/tmp/
+backups/
+_backups/
+*.sqlite
+*.db
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.bak
 *.log
 
-# Local/editor
+# SQL dumps are blocked, but migration SQL is allowed.
+*.sql
+!backend/app/scripts/sql/*.sql
+
+# Redis dumps
+redis-data/
+dump.rdb
+appendonlydir/
+*.aof
+*.rdb
+
+# OS / editor
+.DS_Store
+Thumbs.db
 .vscode/
 .idea/
-.DS_Store
+
+# Docker local overrides
+docker-compose.override.yml
