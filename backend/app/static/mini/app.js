@@ -928,7 +928,7 @@ function drawGames(items) {
         ? '<div class="running-banner">🔴 بازی در حال اجراست</div>'
         : "";
       const cta = isLobby && myCards <= 0
-        ? `<button class="small-btn primary cta-big open-btn" data-game-id="${gid}">الان وارد بازی شو</button>`
+        ? `<button class="small-btn primary cta-big open-btn" data-game-id="${gid}">خرید کارت</button>`
         : `<button class="small-btn open-btn" data-game-id="${gid}">مشاهده بازی</button>`;
 
       return `
@@ -957,9 +957,17 @@ function drawGames(items) {
 
   root.querySelectorAll(".open-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const gameId = Number(btn.getAttribute("data-game-id"));
+      const gameId = Number(btn.getAttribute("data-game-id") || "0");
       if (!gameId) return;
-      openLiveGame(gameId).catch((err) => setBadge("error", err.message));
+      const myCardsCount = Number(state.myCardsByGame.get(gameId) || 0);
+      // اگر کارتی خریده شده باشد، به تب کارت‌ها برو
+      if (myCardsCount > 0) {
+        state.selectedGameId = gameId;    // برای نمایش کارت‌های همین بازی
+        switchToView("cards");
+      } else {
+        // در غیر این صورت بازی زنده را باز کن تا فرم خرید کارت فعال شود
+        openLiveGame(gameId).catch((err) => setBadge("error", err.message));
+      }
     });
   });
 }
