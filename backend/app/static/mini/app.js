@@ -394,6 +394,18 @@ function playNumberSound() {
   setTimeout(() => playTone({ freq: 980, duration: 0.06, type: "sine", gain: 0.022 }), 68);
 }
 
+function playNumberFeedback() {
+  playNumberSound();
+  triggerLightHaptic("success");
+  try { tg?.HapticFeedback?.impactOccurred?.("medium"); } catch (_) {}
+  try { tg?.HapticFeedback?.notificationOccurred?.("success"); } catch (_) {}
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate([35, 25, 45]);
+    }
+  } catch (_) {}
+}
+
 function playNotifySound(type = "success") {
   if (type === "error") {
     playTone({ freq: 230, duration: 0.11, type: "sawtooth", gain: 0.024 });
@@ -1517,8 +1529,7 @@ function renderLive(snapshot) {
   `;
 
   if (lastFresh && lastNow !== null && lastNow !== undefined) {
-    playNumberSound();
-    triggerLightHaptic("success");
+    playNumberFeedback();
   }
 
   renderWinnerBannerFromState(game.id, st);
@@ -1583,8 +1594,7 @@ function startEventPolling() {
         state.lastEventId = Number(events[events.length - 1].id || state.lastEventId);
         const calledEvent = events.find((e) => String(e?.kind || "").toUpperCase() === "NUMBER_CALLED");
         if (calledEvent) {
-          try { tg?.HapticFeedback?.impactOccurred?.("light"); } catch (_) {}
-          try { if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(24); } catch (_) {}
+          playNumberFeedback();
         }
         const snap = await apiFetch(`/mini-api/games/${state.selectedGameId}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`);
         state.lastEventId = Math.max(Number(state.lastEventId || 0), Number(snap.last_event_id || 0));
