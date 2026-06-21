@@ -3616,3 +3616,82 @@ html[data-theme="light"] .live-main-pro .last-number-pop {
     grid-template-columns: 1fr;
   }
 }
+
+/* WITHDRAW-2B receipt preview overflow fix */
+#withdrawProofModal,
+#withdrawProofModal * {
+  box-sizing: border-box;
+}
+
+#withdrawProofModal {
+  overflow-x: hidden;
+}
+
+.withdraw-proof-modal-card {
+  max-width: calc(100vw - 18px);
+  overflow-x: hidden;
+}
+
+.withdraw-proof-flow,
+.withdraw-proof-step,
+.withdraw-proof-step > div,
+.withdraw-proof-preview,
+.withdraw-proof-preview-card,
+.withdraw-proof-file-picker,
+#withdrawProofTextInput {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.withdraw-proof-file-picker,
+.withdraw-proof-file-picker b,
+.withdraw-proof-preview-card span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.withdraw-proof-preview-card img {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+@media (max-width: 430px) {
+  .winner-modal {
+    padding-left: 8px;
+    padding-right: 8px;
+    overflow-x: hidden;
+  }
+
+  .withdraw-proof-modal-card {
+    width: min(100%, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
+    padding-inline: 12px;
+  }
+
+  .withdraw-proof-step {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .withdraw-proof-preview-card img {
+    max-height: 220px;
+  }
+}
+
+html,
+body,
+.app-shell,
+.view,
+.panel,
+.cards-box,
+.accordion-body,
+.cards-history-scroll {
+  max-width: 100%;
+}
+
+body {
+  overflow-x: hidden;
+}
