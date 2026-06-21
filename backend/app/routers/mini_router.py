@@ -661,6 +661,7 @@ def _mini_send_topic_message(
     topic_id: int | None,
     text: str,
     parse_mode: str = "HTML",
+    reply_markup: dict[str, Any] | None = None,
 ) -> bool:
     bot_token = str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     if not bot_token:
@@ -677,6 +678,8 @@ def _mini_send_topic_message(
     }
     if topic_id is not None and int(topic_id) > 0:
         payload["message_thread_id"] = int(topic_id)
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
 
     req = urllib_request.Request(
         url=f"https://api.telegram.org/bot{bot_token}/sendMessage",
@@ -707,21 +710,21 @@ def _mini_parse_env_int(name: str) -> int | None:
 
 def _mini_fmt_toman(amount: object) -> str:
     try:
-        return f"{int(amount or 0):,} ?????"
+        return f"{int(amount or 0):,} \u062a\u0648\u0645\u0627\u0646"
     except Exception:
-        return "0 ?????"
+        return "0 \u062a\u0648\u0645\u0627\u0646"
 
 
 def _mini_user_title(user: User | None, *, user_id: int) -> str:
     if user is None:
-        return f"????? #{int(user_id)}"
+        return f"\u06a9\u0627\u0631\u0628\u0631 #{int(user_id)}"
     username = str(getattr(user, "username", "") or "").strip()
     tg_user_id = getattr(user, "tg_user_id", None)
     if username:
         return f"@{html_escape(username)}"
     if tg_user_id is not None:
         return f"TG <code>{int(tg_user_id)}</code>"
-    return f"????? #{int(user_id)}"
+    return f"\u06a9\u0627\u0631\u0628\u0631 #{int(user_id)}"
 
 
 def _mini_mask_card(value: object) -> str:
@@ -731,14 +734,51 @@ def _mini_mask_card(value: object) -> str:
     return html_escape(f"{raw[:4]} **** **** {raw[-4:]}")
 
 
-def _mini_send_admin_topic_notice(*, topic_env: str, text: str) -> bool:
+def _mini_admin_deposit_keyboard(*, deposit_id: int, tg_user_id: int | None) -> dict[str, Any]:
+    uid = int(tg_user_id or 0)
+    buttons = [
+        [
+            {"text": "\U0001f441 \u0645\u0634\u0627\u0647\u062f\u0647 \u062f\u0631\u062e\u0648\u0627\u0633\u062a", "callback_data": f"admin:deposits:view:{int(deposit_id)}:0"},
+            {"text": "\U0001f9fe \u0645\u0634\u0627\u0647\u062f\u0647 \u0631\u0633\u06cc\u062f", "callback_data": f"admin:deposit:receipt:{int(deposit_id)}"},
+        ],
+        [
+            {"text": "\u2705 \u062a\u0627\u06cc\u06cc\u062f \u0648\u0627\u0631\u06cc\u0632", "callback_data": f"admin:deposit:approve:{int(deposit_id)}:o:0"},
+            {"text": "\u274c \u0631\u062f \u0648\u0627\u0631\u06cc\u0632", "callback_data": f"admin:deposit:reject:{int(deposit_id)}:o:0"},
+        ],
+    ]
+    if uid > 0:
+        buttons.insert(1, [{"text": "\U0001f504 \u062a\u0627\u0632\u0647\u200c\u0633\u0627\u0632\u06cc \u0645\u0648\u062c\u0648\u062f\u06cc", "callback_data": f"admin:deposit:live:{int(deposit_id)}:{uid}"}])
+    return {"inline_keyboard": buttons}
+
+
+def _mini_admin_withdraw_keyboard(*, withdraw_id: int, tg_user_id: int | None) -> dict[str, Any]:
+    uid = int(tg_user_id or 0)
+    buttons = [
+        [{"text": "\U0001f441 \u0645\u0634\u0627\u0647\u062f\u0647 \u0628\u0631\u062f\u0627\u0634\u062a", "callback_data": f"admin:withdraws:view:{int(withdraw_id)}:PENDING:0"}],
+        [
+            {"text": "\u2705 \u062a\u0627\u06cc\u06cc\u062f \u0628\u0631\u062f\u0627\u0634\u062a", "callback_data": f"admin:withdraw:approve:{int(withdraw_id)}:PENDING:0"},
+            {"text": "\u274c \u0631\u062f \u0628\u0631\u062f\u0627\u0634\u062a", "callback_data": f"admin:withdraw:reject:{int(withdraw_id)}:PENDING:0"},
+        ],
+    ]
+    if uid > 0:
+        buttons.insert(1, [{"text": "\U0001f504 \u062a\u0627\u0632\u0647\u200c\u0633\u0627\u0632\u06cc \u0645\u0648\u062c\u0648\u062f\u06cc", "callback_data": f"admin:withdraw:live:{int(withdraw_id)}:{uid}"}])
+    return {"inline_keyboard": buttons}
+
+
+def _mini_send_admin_topic_notice(*, topic_env: str, text: str, reply_markup: dict[str, Any] | None = None) -> bool:
     chat_id = _mini_parse_env_int("ADMIN_FORUM_CHAT_ID")
     topic_id = _mini_parse_env_int(topic_env)
     if chat_id is None or topic_id is None:
         log.warning("mini admin topic notice skipped: missing %s or ADMIN_FORUM_CHAT_ID", topic_env)
         return False
 
-    sent = _mini_send_topic_message(chat_id=int(chat_id), topic_id=int(topic_id), text=str(text), parse_mode="HTML")
+    sent = _mini_send_topic_message(
+        chat_id=int(chat_id),
+        topic_id=int(topic_id),
+        text=str(text),
+        parse_mode="HTML",
+        reply_markup=reply_markup,
+    )
     if not sent:
         log.warning("mini admin topic notice failed: topic_env=%s chat_id=%s topic_id=%s", topic_env, chat_id, topic_id)
     return bool(sent)
@@ -748,42 +788,52 @@ def _mini_notify_admin_deposit_pending(*, db: Session, dr: DepositRequest) -> bo
     user = db.get(User, int(dr.user_id))
     destination_id, destination_title = _read_request_destination(db, request_id=int(dr.id))
     dest_line = html_escape(str(destination_title or destination_id or "-"))
+    tg_user_id = int(getattr(user, "tg_user_id", 0) or 0) if user is not None else 0
 
     text = (
-        "?? <b>??????? ????? ???? ?? Mini App</b>\n"
-        "#????? #????_?? #???????_????\n"
-        f"?? ????? ???????: <b>{int(dr.id)}</b>\n"
-        f"?? ?????: {_mini_user_title(user, user_id=int(dr.user_id))}\n"
-        f"?? ????: <b>{_mini_fmt_toman(dr.amount)}</b>\n"
-        f"?? ????: <b>{dest_line}</b>\n"
-        f"?? ????: <b>{'????? ???' if bool(dr.receipt_path or dr.receipt_file_id) else '?????'}</b>\n"
-        f"?? ?????: <b>{html_escape(str(dr.status))}</b>\n\n"
-        "???? ?????? ??? ?????? ????????? ?? Mini App ?? ??? ??."
+        "\U0001f4e5 <b>\u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0648\u0627\u0631\u06cc\u0632 \u062c\u062f\u06cc\u062f \u0627\u0632 Mini App</b>\n"
+        "#\u0648\u0627\u0631\u06cc\u0632 #\u0645\u06cc\u0646\u06cc_\u0627\u067e #\u062f\u0631\u062e\u0648\u0627\u0633\u062a_\u062c\u062f\u06cc\u062f\n"
+        f"\U0001f9fe \u0634\u0645\u0627\u0631\u0647 \u062f\u0631\u062e\u0648\u0627\u0633\u062a: <b>{int(dr.id)}</b>\n"
+        f"\U0001f464 \u06a9\u0627\u0631\u0628\u0631: {_mini_user_title(user, user_id=int(dr.user_id))}\n"
+        f"\U0001f4b5 \u0645\u0628\u0644\u063a: <b>{_mini_fmt_toman(dr.amount)}</b>\n"
+        f"\U0001f3e6 \u0645\u0642\u0635\u062f: <b>{dest_line}</b>\n"
+        f"\U0001f4ce \u0631\u0633\u06cc\u062f: <b>{'\u0622\u067e\u0644\u0648\u062f \u0634\u062f\u0647' if bool(dr.receipt_path or dr.receipt_file_id) else '\u0646\u062f\u0627\u0631\u062f'}</b>\n"
+        f"\U0001f4cc \u0648\u0636\u0639\u06cc\u062a: <b>{html_escape(str(dr.status))}</b>\n\n"
+        "\u062f\u06a9\u0645\u0647\u200c\u0647\u0627\u06cc \u0632\u06cc\u0631 \u0645\u062e\u0635\u0648\u0635 \u0647\u0645\u06cc\u0646 \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0647\u0633\u062a\u0646\u062f."
     )
-    return _mini_send_admin_topic_notice(topic_env="ADMIN_TOPIC_DEPOSIT_ID", text=text)
+    return _mini_send_admin_topic_notice(
+        topic_env="ADMIN_TOPIC_DEPOSIT_ID",
+        text=text,
+        reply_markup=_mini_admin_deposit_keyboard(deposit_id=int(dr.id), tg_user_id=tg_user_id),
+    )
 
 
 def _mini_notify_admin_withdraw_pending(*, db: Session, wr: WithdrawRequest) -> bool:
     user = db.get(User, int(wr.user_id))
+    tg_user_id = int(getattr(user, "tg_user_id", 0) or 0) if user is not None else 0
     wallet_balance_raw = db.execute(
         select(Wallet.balance).where(Wallet.user_id == int(wr.user_id))
     ).scalar_one_or_none()
     wallet_balance = int(wallet_balance_raw or 0)
 
     text = (
-        "?? <b>??????? ?????? ???? ?? Mini App</b>\n"
-        "#?????? #????_?? #???????_????\n"
-        f"?? ????? ??????: <b>{int(wr.id)}</b>\n"
-        f"?? ?????: {_mini_user_title(user, user_id=int(wr.user_id))}\n"
-        f"?? ????: <b>{_mini_fmt_toman(wr.amount)}</b>\n"
-        f"?? ?????? ??? ???: <b>{_mini_fmt_toman(wallet_balance)}</b>\n"
-        f"?? ??? ???? ????: <b>{html_escape(str(wr.full_name or '-'))}</b>\n"
-        f"?? ????: <code>{_mini_mask_card(wr.card_number)}</code>\n"
-        f"?? ???: <code>{html_escape(str(wr.iban or '-'))}</code>\n"
-        f"?? ?????: <b>{html_escape(str(wr.status))}</b>\n\n"
-        "???? ?????? ??? ?????? ????????? ?? Mini App ?? ??? ??."
+        "\U0001f4e4 <b>\u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0628\u0631\u062f\u0627\u0634\u062a \u062c\u062f\u06cc\u062f \u0627\u0632 Mini App</b>\n"
+        "#\u0628\u0631\u062f\u0627\u0634\u062a #\u0645\u06cc\u0646\u06cc_\u0627\u067e #\u062f\u0631\u062e\u0648\u0627\u0633\u062a_\u062c\u062f\u06cc\u062f\n"
+        f"\U0001f9fe \u0634\u0645\u0627\u0631\u0647 \u0628\u0631\u062f\u0627\u0634\u062a: <b>{int(wr.id)}</b>\n"
+        f"\U0001f464 \u06a9\u0627\u0631\u0628\u0631: {_mini_user_title(user, user_id=int(wr.user_id))}\n"
+        f"\U0001f4b5 \u0645\u0628\u0644\u063a: <b>{_mini_fmt_toman(wr.amount)}</b>\n"
+        f"\U0001f45b \u0645\u0648\u062c\u0648\u062f\u06cc \u06a9\u06cc\u0641 \u067e\u0648\u0644: <b>{_mini_fmt_toman(wallet_balance)}</b>\n"
+        f"\U0001f465 \u0646\u0627\u0645 \u0635\u0627\u062d\u0628 \u062d\u0633\u0627\u0628: <b>{html_escape(str(wr.full_name or '-'))}</b>\n"
+        f"\U0001f4b3 \u06a9\u0627\u0631\u062a: <code>{_mini_mask_card(wr.card_number)}</code>\n"
+        f"\U0001f3e6 \u0634\u0628\u0627: <code>{html_escape(str(wr.iban or '-'))}</code>\n"
+        f"\U0001f4cc \u0648\u0636\u0639\u06cc\u062a: <b>{html_escape(str(wr.status))}</b>\n\n"
+        "\u062f\u06a9\u0645\u0647\u200c\u0647\u0627\u06cc \u0632\u06cc\u0631 \u0645\u062e\u0635\u0648\u0635 \u0647\u0645\u06cc\u0646 \u062f\u0631\u062e\u0648\u0627\u0633\u062a \u0647\u0633\u062a\u0646\u062f."
     )
-    return _mini_send_admin_topic_notice(topic_env="ADMIN_TOPIC_WITHDRAW_ID", text=text)
+    return _mini_send_admin_topic_notice(
+        topic_env="ADMIN_TOPIC_WITHDRAW_ID",
+        text=text,
+        reply_markup=_mini_admin_withdraw_keyboard(withdraw_id=int(wr.id), tg_user_id=tg_user_id),
+    )
 
 
 def _mini_send_game_created_notice(*, game: Game) -> bool:
