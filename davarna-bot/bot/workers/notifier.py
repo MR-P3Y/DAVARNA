@@ -24,7 +24,6 @@ from bot.services.api_client import ApiClient
 from bot.services.admin_topics import ensure_topic_rules, forum_enabled, now_stamp, send_to_topic
 from bot.services.user_topics import (
     game_topic_title as user_game_topic_title,
-    send_to_game_topic as send_to_user_game_topic,
     send_to_topic as send_to_user_topic,
 )
 from bot.services.notify_store import (
@@ -297,14 +296,6 @@ async def _send_user_game_started_notice(bot: Bot, *, game_id: int, report: dict
     )
 
     await send_to_user_topic(bot, name="announce", text=text, parse_mode="HTML", disable_notification=False)
-    await send_to_user_game_topic(
-        bot,
-        game_topic_id=game_topic_id if game_topic_id > 0 else None,
-        text=text,
-        parse_mode="HTML",
-        disable_notification=False,
-    )
-
 
 async def _send_user_game_created_notice(bot: Bot, *, game_id: int, report: dict, event: dict) -> None:
     if not _is_user_forum_game(report):
@@ -324,14 +315,6 @@ async def _send_user_game_created_notice(bot: Bot, *, game_id: int, report: dict
     )
 
     await send_to_user_topic(bot, name="announce", text=text, parse_mode="HTML", disable_notification=False)
-    await send_to_user_game_topic(
-        bot,
-        game_topic_id=game_topic_id if game_topic_id > 0 else None,
-        text=text,
-        parse_mode="HTML",
-        disable_notification=False,
-    )
-
 
 async def _send_user_game_ended_notice(bot: Bot, *, game_id: int, report: dict, end_reason: str | None) -> None:
     if not _is_user_forum_game(report):
@@ -355,14 +338,6 @@ async def _send_user_game_ended_notice(bot: Bot, *, game_id: int, report: dict, 
     )
 
     await send_to_user_topic(bot, name="results", text=text, parse_mode="HTML", disable_notification=False)
-    await send_to_user_game_topic(
-        bot,
-        game_topic_id=game_topic_id if game_topic_id > 0 else None,
-        text=text,
-        parse_mode="HTML",
-        disable_notification=True,
-    )
-
 
 async def _send_user_live_number_notice(
     bot: Bot,
@@ -811,13 +786,6 @@ async def _queue_prize_notifications(
             text=public_text,
             parse_mode="HTML",
             disable_notification=False,
-        )
-        await send_to_user_game_topic(
-            bot,
-            game_topic_id=game_topic_id if game_topic_id > 0 else None,
-            text=public_text,
-            parse_mode="HTML",
-            disable_notification=True,
         )
 
     for tg_uid, cards in grouped.items():
