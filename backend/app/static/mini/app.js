@@ -5,6 +5,7 @@ const state = {
   tokenExp: 0,
   authReady: false,
   selectedGameId: null,
+    adminWithdrawWalletStatus: new Map(),
   lastEventId: 0,
   pollTimer: null,
   depositDestinations: [],
@@ -2383,6 +2384,7 @@ function drawWinTimeline() {
             بازی: ${gid > 0 ? `#${gid}` : "-"}<br />
             زمان: ${safeText(String(w.created_at || "-"))}
           </div>
+          <div id="adminWdrWalletStatus${safeText(w.id)}" class="withdraw-wallet-status">وضعیت کیف پول هنوز بروزرسانی نشده است.</div>
           <div class="history-open-hint">برای مشاهده جزئیات برد لمس کنید</div>
         </div>
       `;
@@ -2938,6 +2940,38 @@ async function refreshAdminDeposits() {
   renderAdminDeposits(out);
 }
 
+
+function renderWithdrawWalletStatusLine(info, withdrawAmount = 0) {
+  if (!info) return "وضعیت کیف پول هنوز بروزرسانی نشده است.";
+  const balance = Number(info.wallet_balance || 0);
+  const pendingOther = Number(info.pending_other || 0);
+  const available = Number(info.available_for_this || 0);
+  const req = Number(info.request_amount || withdrawAmount || 0);
+  const ok = Boolean(info.can_approve);
+  return `کیف پول: ${toman(balance)} | برداشت‌های دیگر در انتظار: ${toman(pendingOther)} | قابل تایید برای این برداشت: ${toman(available)} | مبلغ درخواست: ${toman(req)} | ${ok ? "مجاز برای تایید" : "نیازمند رد/بررسی"}`;
+}
+
+function setWithdrawWalletStatus(withdrawId, info) {
+  const id = Number(withdrawId || 0);
+  if (!id) return;
+  state.admin.adminWithdrawWalletStatus?.set(id, info);
+  const el = getEl(`adminWdrWalletStatus${id}`);
+  if (el) {
+    el.textContent = renderWithdrawWalletStatusLine(info);
+    el.classList.toggle("ok", Boolean(info?.can_approve));
+    el.classList.toggle("bad", !info?.can_approve);
+  }
+  const approveBtn = document.querySelector(`.admin-wdr-approve-btn[data-id="${id}"]`);
+  if (approveBtn && info) {
+    approveBtn.classList.toggle("needs-refresh", false);
+    approveBtn.disabled = !Boolean(info.can_approve);
+    approveBtn.title = info.can_approve
+      ? "آخرین وضعیت کیف پول تایید شد؛ می‌توانید برداشت را تایید کنید."
+      : "موجودی قابل تایید کافی نیست؛ قبل از اقدام بررسی کنید.";
+  }
+}
+
+
 function renderAdminWithdraws(payload) {
   const root = getEl("adminWithdrawsList");
   if (!root) return;
@@ -2951,7 +2985,8 @@ function renderAdminWithdraws(payload) {
       const status = String(w.status || "").toUpperCase();
       const actions = [];
       if (status === "PENDING") {
-        actions.push(`<button class="small-btn primary admin-wdr-approve-btn" data-id="${safeText(w.id)}" type="button">تایید</button>`);
+        actions.push(`<button class="small-btn admin-wdr-wallet-refresh-btn" data-id="${safeText(w.id)}" type="button">بروزرسانی کیف پول</button>`);
+        actions.push(`<button class="small-btn primary admin-wdr-approve-btn needs-refresh" data-id="${safeText(w.id)}" type="button" disabled title="ابتدا بروزرسانی کیف پول را بزنید.">تایید</button>`);
         actions.push(`<button class="small-btn danger admin-wdr-reject-btn" data-id="${safeText(w.id)}" type="button">رد</button>`);
       }
       if (status === "APPROVED") {
@@ -2971,6 +3006,14 @@ function renderAdminWithdraws(payload) {
       `;
     })
     .join("");
+
+  root.querySelectorAll(".admin-wdr-wallet-refresh-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.getAttribute("data-id") || "0");
+      if (!id) return;
+      adminRefreshWithdrawWallet(id).catch((e) => setBadge("error", e.message));
+    });
+  });
 
   root.querySelectorAll(".admin-wdr-approve-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -3752,7 +3795,21 @@ async function adminRejectDeposit(depositId) {
   await refreshAdminDeposits();
 }
 
+
+async function adminRefreshWithdrawWallet(withdrawId) {
+  const id = Number(withdrawId || 0);
+  if (!id) throw new Error("شناسه برداشت نامعتبر است.");
+  setBadge("loading", "در حال بروزرسانی کیف پول...");
+  const info = await apiFetch(`/mini-api/admin/withdraws/${id}/wallet-status`);
+  setWithdrawWalletStatus(id, info);
+  setBadge(info?.can_approve ? "success" : "error", info?.can_approve ? "کیف پول بروزرسانی شد؛ تایید مجاز است" : "موجودی قابل تایید کافی نیست");
+  return info;
+}
+
+
 async function adminApproveWithdraw(withdrawId) {
+  const info = await adminRefreshWithdrawWallet(withdrawId);
+  if (!info?.can_approve) throw new Error("موجودی قابل تایید برای این برداشت کافی نیست. درخواست را رد یا دوباره بررسی کنید.");
   await apiFetch(`/mini-api/admin/withdraws/${Number(withdrawId)}/approve`, {
     method: "POST",
     body: { idempotency_key: idem("mini_admin_wdr_approve") },

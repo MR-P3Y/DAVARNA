@@ -2195,7 +2195,7 @@ def mini_admin_send_live_link(
             f"🎮 بازی: <b>#{int(game_id)}</b>\n"
             f"🃏 تعداد کارت‌های شما در این بازی: <b>{cards_count}</b>\n\n"
             "برای مشاهده پخش زنده روی لینک زیر بزنید:\n"
-            f"<a href=\\"{safe_url}\\">مشاهده پخش زنده بازی #{int(game_id)}</a>\n\n"
+            f'<a href="{safe_url}">مشاهده پخش زنده بازی #{int(game_id)}</a>\n\n'
             "این لینک فقط برای بازیکنانی ارسال شده که در همین بازی کارت خریداری کرده‌اند."
         )
 
@@ -2392,6 +2392,62 @@ def mini_admin_list_withdraws(
         )
 
     return {"total": int(total or 0), "limit": int(limit), "offset": int(offset), "items": items}
+
+
+@router.get("/admin/withdraws/{withdraw_id}/wallet-status")
+def mini_admin_withdraw_wallet_status(
+    withdraw_id: int,
+    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
+    db: Session = Depends(get_db),
+):
+    _ = ident
+    wr = db.execute(
+        select(WithdrawRequest).where(WithdrawRequest.id == int(withdraw_id))
+    ).scalar_one_or_none()
+    if not wr:
+        raise HTTPException(status_code=404, detail="withdraw_request not found")
+
+    user = db.get(User, int(wr.user_id))
+    wallet_balance_raw = db.execute(
+        select(Wallet.balance).where(Wallet.user_id == int(wr.user_id))
+    ).scalar_one_or_none()
+    wallet_balance = int(wallet_balance_raw or 0)
+
+    pending_total_raw = db.execute(
+        select(func.coalesce(func.sum(WithdrawRequest.amount), 0)).where(
+            WithdrawRequest.user_id == int(wr.user_id),
+            WithdrawRequest.status == "PENDING",
+        )
+    ).scalar_one()
+    pending_total = int(pending_total_raw or 0)
+
+    pending_other_raw = db.execute(
+        select(func.coalesce(func.sum(WithdrawRequest.amount), 0)).where(
+            WithdrawRequest.user_id == int(wr.user_id),
+            WithdrawRequest.status == "PENDING",
+            WithdrawRequest.id != int(wr.id),
+        )
+    ).scalar_one()
+    pending_other = int(pending_other_raw or 0)
+
+    request_amount = int(wr.amount or 0)
+    available_for_this = max(0, int(wallet_balance) - int(pending_other))
+    can_approve = str(wr.status).upper() == "PENDING" and available_for_this >= request_amount
+
+    return {
+        "ok": True,
+        "withdraw_id": int(wr.id),
+        "user_id": int(wr.user_id),
+        "tg_user_id": int(user.tg_user_id) if user and user.tg_user_id is not None else None,
+        "tg_username": str(user.username) if user and user.username else None,
+        "status": str(wr.status),
+        "request_amount": int(request_amount),
+        "wallet_balance": int(wallet_balance),
+        "pending_total": int(pending_total),
+        "pending_other": int(pending_other),
+        "available_for_this": int(available_for_this),
+        "can_approve": bool(can_approve),
+    }
 
 
 @router.post("/admin/withdraws/{withdraw_id}/approve")
