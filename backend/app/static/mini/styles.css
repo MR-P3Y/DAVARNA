@@ -501,6 +501,7 @@ body {
   padding: 12px;
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .wallet-flow-grid {
@@ -532,6 +533,7 @@ body {
   padding: 12px;
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .withdraw-flow .deposit-step.final {
@@ -573,6 +575,8 @@ body {
   grid-template-columns: 28px 1fr;
   gap: 10px;
   transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .deposit-step:hover {
@@ -601,6 +605,8 @@ body {
 .deposit-step-body {
   display: grid;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .deposit-step-body label {
@@ -611,6 +617,8 @@ body {
 .deposit-step-body input,
 .deposit-step-body select {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 38px;
   border-radius: 10px;
   border: 1px solid var(--glass-border);
@@ -618,6 +626,15 @@ body {
   color: var(--text);
   padding: 8px 10px;
   outline: none;
+}
+
+.deposit-step-body input[type="file"] {
+  direction: ltr;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
 }
 
 .deposit-destination-row {
@@ -650,6 +667,8 @@ body {
   padding: 8px 9px;
   display: grid;
   gap: 3px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .destination-selected-head {
@@ -661,11 +680,13 @@ body {
 .destination-selected-title {
   font-size: 12px;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .destination-selected-meta {
   font-size: 11px;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .destination-selected-number {
@@ -675,6 +696,9 @@ body {
   direction: ltr;
   text-align: left;
   letter-spacing: 0.8px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .withdraw-review-card {
@@ -2743,10 +2767,24 @@ html[data-theme="light"] .mini-toast {
   font-size: 12px;
   color: var(--muted);
   background: rgba(255,255,255,0.04);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.receipt-preview > div,
+.receipt-preview strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .receipt-preview img {
   width: 100%;
+  max-width: 100%;
+  height: auto;
   max-height: 220px;
   object-fit: contain;
   border-radius: 10px;

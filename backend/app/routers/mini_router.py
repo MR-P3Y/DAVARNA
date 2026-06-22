@@ -749,7 +749,13 @@ def _mini_admin_deposit_keyboard(*, deposit_id: int, tg_user_id: int | None) -> 
         ],
     ]
     if uid > 0:
-        buttons.insert(1, [{"text": "\U0001f504 \u062a\u0627\u0632\u0647\u200c\u0633\u0627\u0632\u06cc \u0645\u0648\u062c\u0648\u062f\u06cc", "callback_data": f"admin:deposit:live:{int(deposit_id)}:{uid}"}])
+        buttons.insert(
+            1,
+            [
+                {"text": "\U0001f464 \u0645\u0634\u0627\u0647\u062f\u0647 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u06a9\u0627\u0631\u0628\u0631", "callback_data": f"admin:users:profile:{uid}"},
+                {"text": "\U0001f504 \u062a\u0627\u0632\u0647\u200c\u0633\u0627\u0632\u06cc \u0645\u0648\u062c\u0648\u062f\u06cc", "callback_data": f"admin:deposit:live:{int(deposit_id)}:{uid}"},
+            ],
+        )
     return {"inline_keyboard": buttons}
 
 
@@ -763,7 +769,13 @@ def _mini_admin_withdraw_keyboard(*, withdraw_id: int, tg_user_id: int | None) -
         ],
     ]
     if uid > 0:
-        buttons.insert(1, [{"text": "\U0001f504 \u062a\u0627\u0632\u0647\u200c\u0633\u0627\u0632\u06cc \u0645\u0648\u062c\u0648\u062f\u06cc", "callback_data": f"admin:withdraw:live:{int(withdraw_id)}:{uid}"}])
+        buttons.insert(
+            1,
+            [
+                {"text": "\U0001f464 \u0645\u0634\u0627\u0647\u062f\u0647 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u06a9\u0627\u0631\u0628\u0631", "callback_data": f"admin:users:profile:{uid}"},
+                {"text": "\U0001f504 \u062a\u0627\u0632\u0647\u200c\u0633\u0627\u0632\u06cc \u0645\u0648\u062c\u0648\u062f\u06cc", "callback_data": f"admin:withdraw:live:{int(withdraw_id)}:{uid}"},
+            ],
+        )
     return {"inline_keyboard": buttons}
 
 

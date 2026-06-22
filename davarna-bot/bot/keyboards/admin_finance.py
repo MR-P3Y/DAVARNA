@@ -122,6 +122,7 @@ def withdraw_item_kb(*, withdraw_id: int, status: str, back_offset: int = 0, tg_
 def withdraw_admin_alert_kb(*, withdraw_id: int, tg_user_id: int):
     kb = InlineKeyboardBuilder()
     kb.button(text="👁 مشاهده درخواست", callback_data=f"admin:withdraws:view:{withdraw_id}:PENDING:0")
+    kb.button(text="👤 مشاهده پروفایل کاربر", callback_data=f"admin:users:profile:{tg_user_id}")
     kb.button(text="🔄 تازه‌سازی موجودی", callback_data=f"admin:withdraw:live:{withdraw_id}:{tg_user_id}")
     kb.button(text="✅ تایید برداشت", callback_data=f"admin:withdraw:approve:{withdraw_id}:PENDING:0")
     kb.button(text="❌ رد برداشت", callback_data=f"admin:withdraw:reject:{withdraw_id}:PENDING:0")
@@ -132,6 +133,7 @@ def withdraw_admin_alert_kb(*, withdraw_id: int, tg_user_id: int):
 def deposit_admin_alert_kb(*, deposit_id: int, tg_user_id: int):
     kb = InlineKeyboardBuilder()
     kb.button(text="👁 مشاهده رسید", callback_data=f"admin:deposits:view:{deposit_id}:0")
+    kb.button(text="👤 مشاهده پروفایل کاربر", callback_data=f"admin:users:profile:{tg_user_id}")
     kb.button(text="🔄 تازه‌سازی موجودی", callback_data=f"admin:deposit:live:{deposit_id}:{tg_user_id}")
     kb.button(text="✅ تایید واریز", callback_data=f"admin:deposit:approve:{deposit_id}:o:0")
     kb.button(text="❌ رد واریز", callback_data=f"admin:deposit:reject:{deposit_id}:o:0")
@@ -197,4 +199,3 @@ def withdraw_receipt_prompt_kb(*, withdraw_id: int, status: str, back_offset: in
     kb.button(text="❌ لغو", callback_data="admin:cancel")
     kb.adjust(1)
     return kb.as_markup()
-
