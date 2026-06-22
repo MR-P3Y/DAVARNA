@@ -1233,9 +1233,39 @@ def dashboard_insights(
         if col_prize_total <= 0 and col_payout_total > 0:
             col_prize_total = col_payout_total
 
-        sold_cards = 0
-        if int(g.card_price or 0) > 0:
+        card_count = int(
+            db.execute(
+                select(func.count(GameCard.id)).where(GameCard.game_id == int(g.id))
+            ).scalar_one()
+            or 0
+        )
+        buy_tx_total = int(
+            db.execute(
+                select(func.coalesce(func.sum(WalletTx.amount), 0)).where(
+                    WalletTx.direction == "DEBIT",
+                    WalletTx.reason == "BUY_CARDS",
+                    WalletTx.ref_type == "GAME",
+                    WalletTx.ref_id == int(g.id),
+                )
+            ).scalar_one()
+            or 0
+        )
+
+        sold_cards = int(card_count)
+        if sold_cards <= 0 and int(g.card_price or 0) > 0:
             sold_cards = int(g.sold_amount) // int(g.card_price)
+
+        sold_amount = int(g.sold_amount or 0)
+        if sold_amount <= 0 and buy_tx_total > 0:
+            sold_amount = int(buy_tx_total)
+
+        commission_amount = int(g.commission_amount or 0)
+        if commission_amount <= 0 and sold_amount > 0:
+            commission_amount = int(round(sold_amount * 0.10))
+
+        prize_pool = int(g.prize_pool or 0)
+        if prize_pool <= 0 and sold_amount > 0:
+            prize_pool = max(0, int(sold_amount) - int(commission_amount))
 
         row_winners_count = len(row_winner_ids)
         if row_winners_count <= 0:
@@ -1251,6 +1281,63 @@ def dashboard_insights(
 
         row_winner_amount = int(row_prize_total // row_winners_count) if row_winners_count > 0 else 0
         col_winner_amount = int(col_prize_total // col_winners_count) if col_winners_count > 0 else 0
+        if row_prize_total <= 0 and prize_pool > 0 and row_winners_count > 0:
+            row_prize_total = int(prize_pool) - int(col_prize_total or 0)
+            row_winner_amount = int(row_prize_total // row_winners_count) if row_winners_count > 0 else 0
+        if col_prize_total <= 0 and prize_pool > 0 and col_winners_count > 0:
+            col_prize_total = int(round(prize_pool * 0.30))
+            col_winner_amount = int(col_prize_total // col_winners_count) if col_winners_count > 0 else 0
+
+        tx_rows = (
+            db.execute(
+                select(WalletTx.reason, func.coalesce(func.sum(WalletTx.amount), 0), func.count(func.distinct(Wallet.user_id)))
+                .select_from(WalletTx)
+                .join(Wallet, Wallet.id == WalletTx.wallet_id)
+                .where(
+                    WalletTx.direction == "CREDIT",
+                    WalletTx.reason.in_(["PRIZE_COL", "PRIZE_ROW"]),
+                    WalletTx.ref_type == "GAME",
+                    WalletTx.ref_id == int(g.id),
+                )
+                .group_by(WalletTx.reason)
+            ).all()
+        )
+        prize_user_count = int(
+            db.execute(
+                select(func.count(func.distinct(Wallet.user_id)))
+                .select_from(WalletTx)
+                .join(Wallet, Wallet.id == WalletTx.wallet_id)
+                .where(
+                    WalletTx.direction == "CREDIT",
+                    WalletTx.reason.in_(["PRIZE_COL", "PRIZE_ROW"]),
+                    WalletTx.ref_type == "GAME",
+                    WalletTx.ref_id == int(g.id),
+                )
+            ).scalar_one()
+            or 0
+        )
+        for reason, amount_total, user_count in tx_rows:
+            reason_key = str(reason or "").upper()
+            amount_val = int(amount_total or 0)
+            count_val = int(user_count or 0)
+            if reason_key == "PRIZE_ROW":
+                if row_prize_total <= 0:
+                    row_prize_total = amount_val
+                if row_winners_count <= 0:
+                    row_winners_count = count_val
+                if row_winner_amount <= 0 and row_winners_count > 0:
+                    row_winner_amount = int(row_prize_total // row_winners_count)
+            elif reason_key == "PRIZE_COL":
+                if col_prize_total <= 0:
+                    col_prize_total = amount_val
+                if col_winners_count <= 0:
+                    col_winners_count = count_val
+                if col_winner_amount <= 0 and col_winners_count > 0:
+                    col_winner_amount = int(col_prize_total // col_winners_count)
+
+        winners_count = len(all_winners)
+        if winners_count <= 0:
+            winners_count = int(prize_user_count) if prize_user_count > 0 else int(row_winners_count) + int(col_winners_count)
 
         recent_games.append(
             MiniRecentGameStatOut(
@@ -1258,10 +1345,10 @@ def dashboard_insights(
                 status=str(g.status or ""),
                 card_price=int(g.card_price or 0),
                 sold_cards=int(sold_cards),
-                sold_amount=int(g.sold_amount or 0),
-                commission_amount=int(g.commission_amount or 0),
-                prize_pool=int(g.prize_pool),
-                winners_count=int(len(all_winners)),
+                sold_amount=int(sold_amount),
+                commission_amount=int(commission_amount),
+                prize_pool=int(prize_pool),
+                winners_count=int(winners_count),
                 col_prize_total=int(col_prize_total),
                 row_prize_total=int(row_prize_total),
                 col_winners_count=int(col_winners_count),

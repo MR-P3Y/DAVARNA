@@ -1106,9 +1106,21 @@ body {
 }
 
 .card-progress {
-  margin: 0 0 8px;
+  display: grid;
+  gap: 5px;
+  margin: 0 0 12px;
   font-size: 11px;
   color: var(--muted);
+  line-height: 1.7;
+  min-height: 0;
+  height: auto;
+  overflow: visible;
+}
+
+.card-progress span {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .card-progress-bar {
@@ -3361,7 +3373,8 @@ html[data-theme="light"] .live-main-pro .last-number-pop {
   border-radius: 10px;
 }
 
-.card-progress {
+.card-pro-ux21 .card-progress-bar,
+.active-game-block-ux21 .card-progress-bar {
   height: 7px;
   border-radius: 999px;
   overflow: hidden;
