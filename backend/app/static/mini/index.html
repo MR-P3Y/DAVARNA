@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>مینی‌اپ دبرنا حلیم یگن طیار</title>
-    <link rel="stylesheet" href="./styles.css?v=20260622cardstats1" />
+    <link rel="stylesheet" href="./styles.css?v=20260622receiptdecision1" />
   </head>
   <body>
     <div id="appSplash" class="app-splash" aria-label="در حال آماده‌سازی مینی‌اپ">
@@ -491,6 +491,18 @@
       </div>
     </div>
 
+    <div id="depositReceiptModal" class="winner-modal" aria-hidden="true">
+      <div class="history-modal-card glass">
+        <div class="winner-modal-head">
+          <h2 id="depositReceiptModalTitle">رسید واریز</h2>
+          <button id="depositReceiptCloseBtn" class="icon-btn" type="button" aria-label="بستن">×</button>
+        </div>
+        <p id="depositReceiptModalMeta" class="winner-modal-kind"></p>
+        <div id="depositReceiptModalBody" class="deposit-receipt-modal-body"></div>
+        <div id="depositReceiptModalActions" class="deposit-receipt-actions"></div>
+      </div>
+    </div>
+
 
     <div id="withdrawProofModal" class="winner-modal" aria-hidden="true">
       <div class="withdraw-proof-modal-card glass" role="dialog" aria-modal="true" aria-labelledby="withdrawProofModalTitle">
@@ -540,6 +552,6 @@
     <div id="miniToast" class="mini-toast hidden" role="status" aria-live="polite"></div>
 
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="./app.js?v=20260622cardstats1" type="module"></script>
+    <script src="./app.js?v=20260622receiptdecision1" type="module"></script>
   </body>
 </html>

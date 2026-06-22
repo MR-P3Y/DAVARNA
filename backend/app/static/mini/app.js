@@ -35,6 +35,7 @@ const state = {
   audioCtx: null,
   soundEnabled: false,
   receiptPreviewUrl: null,
+  depositReceiptObjectUrl: null,
   splashHidden: false,
   gamesCache: [],
   walletCache: {
@@ -51,6 +52,7 @@ const state = {
     selectedGameId: 0,
     gamesById: new Map(),
     liveLinksByGame: new Map(),
+    depositsById: new Map(),
     users: {
       selectedTgUserId: 0,
       lastQuery: "",
@@ -1151,6 +1153,49 @@ async function apiFetch(path, { method = "GET", body = null, headers = {} } = {}
     throw new Error(localizeApiError(detail));
   }
   return await resp.json();
+}
+
+function filenameFromContentDisposition(headerValue, fallback = "receipt") {
+  const text = String(headerValue || "");
+  const utf = /filename\*=UTF-8''([^;]+)/i.exec(text);
+  if (utf?.[1]) {
+    try { return decodeURIComponent(utf[1].replace(/["']/g, "")); } catch (_) {}
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(text);
+  return String(plain?.[1] || fallback || "receipt").trim();
+}
+
+async function apiBlobFetch(path, { headers = {} } = {}) {
+  if (!state.token) {
+    throw new Error("نشست کاربری فعال نیست. مینی‌اپ را از منوی رسمی ربات باز کنید.");
+  }
+  let requestPath = String(path || "");
+  requestPath += requestPath.includes("?") ? `&_=${Date.now()}` : `?_=${Date.now()}`;
+  const resp = await fetchWithRetry(requestPath, {
+    method: "GET",
+    headers: {
+      ...headers,
+      Authorization: `Bearer ${state.token}`,
+    },
+    cache: "no-store",
+  }, 1);
+
+  if (!resp.ok) {
+    if (resp.status === 401) clearMiniSession();
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const data = await resp.clone().json();
+      if (data?.detail) detail = String(data.detail);
+    } catch (_) {
+      try { detail = await resp.text(); } catch (_) {}
+    }
+    throw new Error(localizeApiError(detail));
+  }
+
+  const blob = await resp.blob();
+  const contentType = String(resp.headers.get("content-type") || blob.type || "application/octet-stream");
+  const filename = filenameFromContentDisposition(resp.headers.get("content-disposition"), "deposit-receipt");
+  return { blob, contentType, filename };
 }
 
 async function runManualRefresh(buttonId, taskFn) {
@@ -3139,10 +3184,113 @@ async function refreshAdminGames() {
   updateAdminActionButtons();
 }
 
+function closeDepositReceiptModal() {
+  const modal = getEl("depositReceiptModal");
+  if (modal) {
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+  }
+  if (state.depositReceiptObjectUrl) {
+    try { URL.revokeObjectURL(state.depositReceiptObjectUrl); } catch (_) {}
+    state.depositReceiptObjectUrl = null;
+  }
+}
+
+function depositReceiptMetaText(item, id) {
+  if (!item) return `واریزی #${id}`;
+  const user = item.tg_username || item.tg_user_id || item.user_id || "-";
+  const parts = [
+    `واریزی #${id}`,
+    `مبلغ: ${toman(item.amount || 0)}`,
+    `کاربر: ${user}`,
+    item.destination_title ? `مقصد: ${item.destination_title}` : "",
+  ].filter(Boolean);
+  return parts.join(" | ");
+}
+
+function renderDepositReceiptActions(depositId, item) {
+  const actions = getEl("depositReceiptModalActions");
+  if (!actions) return;
+  const status = String(item?.status || "").toUpperCase();
+  const isPending = !status || status === "PENDING_REVIEW" || status === "PENDING";
+  actions.innerHTML = isPending
+    ? `
+      <button id="depositReceiptApproveBtn" class="small-btn primary" type="button">تایید واریز</button>
+      <button id="depositReceiptRejectBtn" class="small-btn danger" type="button">رد واریز</button>
+      <button id="depositReceiptDismissBtn" class="small-btn" type="button">بستن</button>
+    `
+    : `
+      <span class="meta">این واریزی در وضعیت ${safeText(depositStatusLabel(status))} است.</span>
+      <button id="depositReceiptDismissBtn" class="small-btn" type="button">بستن</button>
+    `;
+
+  const approveBtn = getEl("depositReceiptApproveBtn");
+  const rejectBtn = getEl("depositReceiptRejectBtn");
+  const dismissBtn = getEl("depositReceiptDismissBtn");
+  if (approveBtn) {
+    approveBtn.addEventListener("click", () => adminApproveDeposit(depositId, { closeReceipt: true }).catch((e) => setBadge("error", e.message)));
+  }
+  if (rejectBtn) {
+    rejectBtn.addEventListener("click", () => adminRejectDeposit(depositId, { closeReceipt: true }).catch((e) => setBadge("error", e.message)));
+  }
+  if (dismissBtn) {
+    dismissBtn.addEventListener("click", closeDepositReceiptModal);
+  }
+}
+
+async function openAdminDepositReceipt(depositId) {
+  const id = Number(depositId || 0);
+  if (!id) throw new Error("شناسه واریزی نامعتبر است.");
+
+  const modal = getEl("depositReceiptModal");
+  const title = getEl("depositReceiptModalTitle");
+  const meta = getEl("depositReceiptModalMeta");
+  const body = getEl("depositReceiptModalBody");
+  const item = state.admin.depositsById?.get(id) || null;
+  if (!modal || !title || !meta || !body) return;
+
+  closeDepositReceiptModal();
+  title.textContent = `رسید واریز #${id}`;
+  meta.textContent = depositReceiptMetaText(item, id);
+  body.innerHTML = '<div class="empty">در حال بارگذاری رسید...</div>';
+  renderDepositReceiptActions(id, item);
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+
+  try {
+    const { blob, contentType, filename } = await apiBlobFetch(`/mini-api/admin/deposits/${id}/receipt`);
+    const objectUrl = URL.createObjectURL(blob);
+    state.depositReceiptObjectUrl = objectUrl;
+    meta.textContent = depositReceiptMetaText(item, id);
+
+    if (contentType.toLowerCase().startsWith("image/")) {
+      body.innerHTML = `
+        <div class="deposit-receipt-preview">
+          <img src="${objectUrl}" alt="رسید واریز #${safeText(id)}" />
+          <a class="small-btn" href="${objectUrl}" download="${safeText(filename || `deposit-${id}-receipt`)}">دانلود رسید</a>
+        </div>
+      `;
+    } else {
+      body.innerHTML = `
+        <div class="deposit-receipt-file-box">
+          <strong>رسید به صورت فایل دریافت شد.</strong>
+          <span>نوع فایل: ${safeText(contentType || "-")}</span>
+          <a class="small-btn primary" href="${objectUrl}" target="_blank" rel="noopener noreferrer" download="${safeText(filename || `deposit-${id}-receipt`)}">باز کردن / دانلود رسید</a>
+        </div>
+      `;
+    }
+  } catch (err) {
+    const msg = String(err?.message || "دریافت رسید انجام نشد.");
+    meta.textContent = "دریافت رسید ناموفق بود";
+    body.innerHTML = `<div class="empty">${safeText(msg)}</div>`;
+  }
+}
+
 function renderAdminDeposits(payload) {
   const root = getEl("adminDepositsList");
   if (!root) return;
   const items = Array.isArray(payload?.items) ? payload.items : [];
+  state.admin.depositsById = new Map(items.map((item) => [Number(item?.id || 0), item]).filter(([id]) => id > 0));
   if (!items.length) {
     root.innerHTML = '<div class="empty">واریز در انتظار بررسی وجود ندارد.</div>';
     return;
@@ -3161,7 +3309,7 @@ function renderAdminDeposits(payload) {
         <div class="admin-item-actions">
           <button class="small-btn primary admin-dep-approve-btn" data-id="${safeText(d.id)}" type="button">تایید</button>
           <button class="small-btn danger admin-dep-reject-btn" data-id="${safeText(d.id)}" type="button">رد</button>
-          ${d.receipt_uploaded ? `<a class="small-btn" href="${safeText(d.receipt_url || "#")}" target="_blank" rel="noopener noreferrer">رسید</a>` : ""}
+          ${d.receipt_uploaded ? `<button class="small-btn admin-dep-receipt-btn" data-id="${safeText(d.id)}" type="button">مشاهده رسید</button>` : ""}
         </div>
       </div>
     `)
@@ -3179,6 +3327,13 @@ function renderAdminDeposits(payload) {
       const id = Number(btn.getAttribute("data-id") || "0");
       if (!id) return;
       adminRejectDeposit(id).catch((e) => setBadge("error", e.message));
+    });
+  });
+  root.querySelectorAll(".admin-dep-receipt-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.getAttribute("data-id") || "0");
+      if (!id) return;
+      openAdminDepositReceipt(id).catch((e) => setBadge("error", e.message));
     });
   });
 }
@@ -4137,18 +4292,20 @@ async function adminClearLiveLink() {
   await Promise.allSettled([refreshAdminGames(), openLiveGame(gid)]);
 }
 
-async function adminApproveDeposit(depositId) {
+async function adminApproveDeposit(depositId, options = {}) {
   await apiFetch(`/mini-api/admin/deposits/${Number(depositId)}/approve`, {
     method: "POST",
     body: { idempotency_key: idem("mini_admin_dep_approve") },
   });
   setBadge("success", `واریزی #${depositId} تایید شد`);
+  if (options.closeReceipt) closeDepositReceiptModal();
   await Promise.allSettled([refreshAdminDeposits(), refreshWallet()]);
 }
 
-async function adminRejectDeposit(depositId) {
+async function adminRejectDeposit(depositId, options = {}) {
   await apiFetch(`/mini-api/admin/deposits/${Number(depositId)}/reject`, { method: "POST" });
   setBadge("success", `واریزی #${depositId} رد شد`);
+  if (options.closeReceipt) closeDepositReceiptModal();
   await refreshAdminDeposits();
 }
 
@@ -4672,6 +4829,13 @@ async function boot() {
   if (historyModal) {
     historyModal.addEventListener("click", (e) => {
       if (e.target === historyModal) closeHistoryModal();
+    });
+  }
+  bind("depositReceiptCloseBtn", "click", closeDepositReceiptModal);
+  const depositReceiptModal = getEl("depositReceiptModal");
+  if (depositReceiptModal) {
+    depositReceiptModal.addEventListener("click", (e) => {
+      if (e.target === depositReceiptModal) closeDepositReceiptModal();
     });
   }
 

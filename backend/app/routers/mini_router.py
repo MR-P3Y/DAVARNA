@@ -782,13 +782,15 @@ def _mini_admin_withdraw_keyboard(*, withdraw_id: int, tg_user_id: int | None) -
 def _mini_send_admin_topic_notice(*, topic_env: str, text: str, reply_markup: dict[str, Any] | None = None) -> bool:
     chat_id = _mini_parse_env_int("ADMIN_FORUM_CHAT_ID")
     topic_id = _mini_parse_env_int(topic_env)
-    if chat_id is None or topic_id is None:
-        log.warning("mini admin topic notice skipped: missing %s or ADMIN_FORUM_CHAT_ID", topic_env)
+    if chat_id is None:
+        log.warning("mini admin topic notice skipped: missing ADMIN_FORUM_CHAT_ID")
         return False
+    if topic_id is None:
+        log.warning("mini admin topic notice fallback: missing %s; sending to ADMIN_FORUM_CHAT_ID", topic_env)
 
     sent = _mini_send_topic_message(
         chat_id=int(chat_id),
-        topic_id=int(topic_id),
+        topic_id=int(topic_id) if topic_id is not None else None,
         text=str(text),
         parse_mode="HTML",
         reply_markup=reply_markup,
@@ -2565,7 +2567,15 @@ def mini_admin_get_deposit_receipt(
     p = Path(str(dr.receipt_path or "")).expanduser()
     if not p.exists() or not p.is_file():
         raise HTTPException(status_code=404, detail="receipt file not found")
-    return FileResponse(str(p.resolve()))
+    suffix = p.suffix.lower()
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".pdf": "application/pdf",
+    }.get(suffix, "application/octet-stream")
+    return FileResponse(str(p.resolve()), media_type=media_type, filename=f"deposit_{int(deposit_id)}_receipt{suffix or ''}")
 
 
 @router.post("/admin/deposits/{deposit_id}/approve")

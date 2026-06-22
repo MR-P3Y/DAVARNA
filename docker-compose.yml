@@ -50,7 +50,7 @@ services:
     container_name: davarna-backend
     restart: unless-stopped
     env_file:
-      - ${BACKEND_ENV_FILE:-./.env}
+      - ${BACKEND_ENV_FILE:-./.env.prod}
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}?charset=utf8mb4
       REDIS_URL: redis://redis:6379/0
@@ -118,7 +118,7 @@ services:
     container_name: davarna-bot
     restart: unless-stopped
     env_file:
-      - ${BOT_ENV_FILE:-./davarna-bot/.env}
+      - ${BOT_ENV_FILE:-./davarna-bot/.env.prod}
     environment:
       API_BASE_URL: http://backend:8000
       REDIS_URL: redis://redis:6379/0
