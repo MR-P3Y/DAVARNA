@@ -948,7 +948,7 @@ def _mini_notify_lobby_cancel_refunds(
             continue
 
         text = (
-            "\U0001F7E6 <b>\u067e\u06cc\u0645\u0648\u0646 \u062f\u0648\u0631\u0646\u0627 | \u06a9\u0646\u0633\u0644 \u0628\u0627\u0632\u06cc</b>\n\n"
+            "\U0001F7E6 <b>\u062f\u0628\u0631\u0646\u0627 \u062d\u0644\u06cc\u0645 \u06cc\u06af\u0646 \u0637\u06cc\u0627\u0631 | \u06a9\u0646\u0633\u0644 \u0628\u0627\u0632\u06cc</b>\n\n"
             f"\U0001F3AE \u0628\u0627\u0632\u06cc: <b>#{int(game_id)}</b>\n"
             f"\U0001F4DD \u0639\u0644\u062a \u06a9\u0646\u0633\u0644: <b>{reason_html}</b>\n"
             f"\U0001F0CF \u062a\u0639\u062f\u0627\u062f \u06a9\u0627\u0631\u062a \u0634\u0645\u0627: <b>{int(purchase_count)}</b>\n"

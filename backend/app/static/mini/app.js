@@ -188,7 +188,7 @@ const CARD_HISTORY_LIMIT = 10;
 const LIVE_EVENTS_LIMIT = 15;
 
 const UI_TEXT = {
-  brandTitle: "\u062f\u0648\u0631\u0646\u0627\u06cc \u067e\u06cc\u0645\u0648\u0646",
+  brandTitle: "\u062f\u0628\u0631\u0646\u0627 \u062d\u0644\u06cc\u0645 \u06cc\u06af\u0646 \u0637\u06cc\u0627\u0631",
   headerUserLabel: "\u06a9\u0627\u0631\u0628\u0631",
   headerWalletMiniLabel: "\u06a9\u06cc\u0641 \u067e\u0648\u0644",
   gamesTitle: "\u0628\u0627\u0632\u06cc\u200c\u0647\u0627",
