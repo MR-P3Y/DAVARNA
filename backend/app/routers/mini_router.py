@@ -729,9 +729,7 @@ def _mini_user_title(user: User | None, *, user_id: int) -> str:
 
 def _mini_mask_card(value: object) -> str:
     raw = _clean_numeric(value)
-    if len(raw) < 8:
-        return html_escape(raw or "-")
-    return html_escape(f"{raw[:4]} **** **** {raw[-4:]}")
+    return html_escape(raw or "-")
 
 
 def _mini_admin_deposit_keyboard(*, deposit_id: int, tg_user_id: int | None) -> dict[str, Any]:
