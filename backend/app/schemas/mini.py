@@ -183,6 +183,7 @@ class MiniNearestToWinOut(BaseModel):
 
 class MiniRecentGameStatOut(BaseModel):
     game_id: int
+    status: str = ""
     card_price: int = 0
     sold_cards: int
     sold_amount: int = 0

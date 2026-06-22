@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -30,6 +31,10 @@ def _safe_int(x: Any, default: int = 0) -> int:
         return int(x)
     except Exception:
         return default
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class GameService:
@@ -347,6 +352,8 @@ class GameService:
         game.row_winner_user_id = None
         game.prize_locked = 1
         game.status = "RUNNING"
+        if not game.started_at:
+            game.started_at = _utcnow_naive()
         db.flush()
 
         try:
@@ -485,6 +492,7 @@ class GameService:
         game.payout_state_json = None
         game.row_winner_user_id = None
         game.status = "ENDED"
+        game.ended_at = _utcnow_naive()
         db.flush()
 
         try:
@@ -750,6 +758,9 @@ class GameService:
                 payout_state.pop("row", None)
                 game.row_winner_user_id = None
                 game.status = "RUNNING"
+                game.ended_at = None
+                if not game.started_at:
+                    game.started_at = _utcnow_naive()
 
                 # If row included column share, rollback col payout flags as well.
                 includes_col_share = bool(row_info.get("includes_col_share", False))
@@ -915,6 +926,7 @@ class GameService:
                 game.payout_state_json = payout_state
                 game.row_winner_user_id = int(winner_user_ids[0]) if winner_user_ids else None
                 game.status = "ENDED"
+                game.ended_at = _utcnow_naive()
                 db.flush()
 
                 _emit_safe_v2(

@@ -1205,7 +1205,7 @@ def dashboard_insights(
     recent_rows = (
         db.execute(
             select(Game)
-            .where(Game.status == "ENDED")
+            .where(Game.status.in_(["RUNNING", "ENDED"]))
             .order_by(Game.id.desc())
             .limit(5)
         )
@@ -1255,6 +1255,7 @@ def dashboard_insights(
         recent_games.append(
             MiniRecentGameStatOut(
                 game_id=int(g.id),
+                status=str(g.status or ""),
                 card_price=int(g.card_price or 0),
                 sold_cards=int(sold_cards),
                 sold_amount=int(g.sold_amount or 0),

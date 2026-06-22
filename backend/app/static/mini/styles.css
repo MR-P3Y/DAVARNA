@@ -1087,17 +1087,22 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
+  min-width: 0;
 }
 
 .card-pro-head strong {
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .card-pro-head span {
   font-size: 11px;
   color: var(--muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .card-progress {
@@ -3249,11 +3254,24 @@ html[data-theme="light"] .live-main-pro .last-number-pop {
 
 .history-card-pro-head-ux21,
 .history-modal-card-item .card-pro-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.history-modal-card-item .card-pro-head > span:last-child {
+  grid-column: 1 / -1;
+  justify-self: start;
+  direction: rtl;
+  unicode-bidi: plaintext;
+  white-space: normal;
+  line-height: 1.7;
+}
+
+.history-modal-card-item .card-id-stack {
+  min-width: 0;
 }
 
 .history-modal-card-item .card-id-stack strong {
@@ -3299,7 +3317,9 @@ html[data-theme="light"] .live-main-pro .last-number-pop {
 
 .history-modal-card-item .mini-card-grid {
   gap: 7px;
-  margin-top: 8px;
+  margin-top: 12px;
+  position: relative;
+  z-index: 1;
 }
 
 .history-modal-card-item .num-chip {
@@ -3372,7 +3392,11 @@ html[data-theme="light"] .live-main-pro .last-number-pop {
 
   .history-card-pro-head-ux21,
   .history-modal-card-item .card-pro-head {
-    flex-wrap: wrap;
+    grid-template-columns: 1fr;
+  }
+
+  .history-modal-card-item .card-game-badge {
+    justify-self: start;
   }
 
   .history-modal-card-item .mini-card-grid,
@@ -3867,15 +3891,67 @@ html[data-theme="light"] .action-local-hint[data-type="success"]:not(:empty) {
 }
 
 .withdraw-proof-actions {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.withdraw-proof-button-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
-  padding-top: 2px;
 }
 
 .withdraw-proof-actions .small-btn {
   min-height: 42px;
   padding-inline: 16px;
+}
+
+#withdrawProofHint {
+  padding: 8px 10px;
+  border-radius: 12px;
+  text-align: right;
+  background: rgba(100, 214, 255, 0.07);
+  border: 1px solid rgba(100, 214, 255, 0.14);
+}
+
+#withdrawProofHint:empty {
+  display: none;
+}
+
+#withdrawProofHint.error {
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+#withdrawProofHint.success {
+  color: #bbf7d0;
+  background: rgba(126, 245, 188, 0.10);
+  border-color: rgba(126, 245, 188, 0.24);
+}
+
+#withdrawProofHint.pending {
+  color: var(--muted);
+}
+
+html[data-theme="light"] #withdrawProofHint {
+  color: #33435f;
+  background: rgba(20, 184, 166, 0.08);
+  border-color: rgba(20, 184, 166, 0.20);
+}
+
+html[data-theme="light"] #withdrawProofHint.error {
+  color: #b42318;
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(220, 38, 38, 0.24);
+}
+
+html[data-theme="light"] #withdrawProofHint.success {
+  color: #067647;
+  background: rgba(34, 197, 94, 0.10);
+  border-color: rgba(22, 163, 74, 0.22);
 }
 
 .admin-wdr-paid-btn {
@@ -3895,6 +3971,11 @@ html[data-theme="light"] .action-local-hint[data-type="success"]:not(:empty) {
     height: 34px;
   }
   .withdraw-proof-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .withdraw-proof-button-row {
     display: grid;
     grid-template-columns: 1fr;
   }

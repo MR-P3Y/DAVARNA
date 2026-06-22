@@ -906,13 +906,11 @@ function setAdminLocalHint(id, text, type = "") {
 function setLocalError(hintId, err) {
   const message = String(err?.message || err || "خطا رخ داد.");
   setHint(hintId, message, "error");
-  setBadge("error", message);
 }
 
 function setAdminLocalError(hintId, err) {
   const message = String(err?.message || err || "خطا رخ داد.");
   setAdminLocalHint(hintId, message, "error");
-  setBadge("error", message);
 }
 
 function setAdminNavVisible(visible) {
@@ -1288,18 +1286,12 @@ function drawGames(items) {
 
     const isBuyButton = btn.classList.contains("cta-big");
 
-    if (!isBuyButton) {
-      state.selectedGameId = gameId;
-      switchToView("cards");
-      return;
-    }
-
     openLiveGame(gameId)
       .then(() => {
         setTimeout(() => {
           const liveTitle = getEl("liveTitle");
           const buyForm = getEl("buyActionForm");
-          const target = liveTitle || buyForm;
+          const target = isBuyButton ? (buyForm || liveTitle) : liveTitle;
 
           if (target) {
             target.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1322,7 +1314,10 @@ function formatDuration(sec) {
 function formatFaDateTime(raw) {
   if (!raw) return "-";
   try {
-    const d = new Date(String(raw));
+    let text = String(raw).trim();
+    text = text.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
+    text = text.replace(/\.(\d{3})\d+/, ".$1");
+    const d = new Date(text);
     if (Number.isNaN(d.getTime())) return String(raw);
     return d.toLocaleString("fa-IR", {
       calendar: "persian",
@@ -1344,7 +1339,7 @@ function drawRecentStats(items) {
   if (!root) return;
   const list = Array.isArray(items) ? items : [];
   if (!list.length) {
-    root.innerHTML = '<div class="empty">هنوز بازی پایان‌یافته‌ای برای آمار وجود ندارد.</div>';
+    root.innerHTML = '<div class="empty">هنوز بازی شروع‌شده‌ای برای آمار وجود ندارد.</div>';
     return;
   }
 
@@ -1365,6 +1360,7 @@ function drawRecentStats(items) {
       return `
       <div class="stat-card">
         <h4>بازی #${g.game_id}</h4>
+        <div class="meta-row">وضعیت: ${safeText(statusLabel(g.status || "ENDED"))}</div>
         <div class="meta-row">🎫 مبلغ کارت: ${safeText(toman(g.card_price || 0))}</div>
         <div class="meta-row">🎟 کارت فروخته‌شده: ${safeText(g.sold_cards)}</div>
         <div class="meta-row">💳 مجموع فروش کارت: ${safeText(toman(g.sold_amount || 0))}</div>
@@ -1761,14 +1757,49 @@ function renderLive(snapshot) {
   renderLiveEvents(snapshot.recent_events || []);
 }
 
-async function openLiveGame(gameId) {
-  state.selectedGameId = Number(gameId);
-  const snapshot = await apiFetch(`/mini-api/games/${gameId}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`);
-  state.lastEventId = Number(snapshot.last_event_id || 0);
+function pickAutoLiveGameId(gameItems) {
+  const items = Array.isArray(gameItems) ? gameItems : [];
+  const activeIds = new Set(items.map((g) => Number(g?.id || 0)).filter((x) => x > 0));
+  const current = Number(state.selectedGameId || 0);
+  if (current > 0 && activeIds.has(current)) return current;
+  const running = items.find((g) => String(g?.status || "").toUpperCase() === "RUNNING");
+  if (running) return Number(running.id || 0);
+  const lobby = items.find((g) => String(g?.status || "").toUpperCase() === "LOBBY");
+  return lobby ? Number(lobby.id || 0) : 0;
+}
+
+function renderLiveSnapshot(snapshot, gameId) {
+  const gid = Number(snapshot?.game?.id || gameId || 0);
+  if (!gid) return;
+  state.selectedGameId = gid;
+  state.lastEventId = Math.max(Number(state.lastEventId || 0), Number(snapshot?.last_event_id || 0));
   setVal("buyQtyInput", "1");
   renderLive(snapshot);
-  setBadge("success", `بازی #${gameId} انتخاب شد`);
   startEventPolling();
+}
+
+async function syncAutoLiveGame(gameItems) {
+  const gid = pickAutoLiveGameId(gameItems);
+  if (!gid) return;
+  try {
+    const cached = state.gameSnapshots.get(gid);
+    if (cached) {
+      renderLiveSnapshot(cached, gid);
+      return;
+    }
+    const snapshot = await apiFetch(`/mini-api/games/${gid}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`);
+    state.gameSnapshots.set(gid, snapshot);
+    renderLiveSnapshot(snapshot, gid);
+  } catch (err) {
+    console.warn("[mini] auto live snapshot failed", err);
+  }
+}
+
+async function openLiveGame(gameId, options = {}) {
+  state.selectedGameId = Number(gameId);
+  const snapshot = await apiFetch(`/mini-api/games/${gameId}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`);
+  renderLiveSnapshot(snapshot, gameId);
+  if (options.announce !== false) setBadge("success", `بازی #${gameId} انتخاب شد`);
 }
 
 function appendEvents(events) {
@@ -1906,6 +1937,7 @@ async function refreshGames() {
     }
   });
 
+  await syncAutoLiveGame(gameItems);
   drawGames(gameItems);
   drawRecentStats(state.recentGamesStats);
   drawTrustStrip(state.dashboardTrust);
@@ -2713,7 +2745,6 @@ async function submitDepositWithReceipt() {
   if (!file) throw new Error("فایل رسید را انتخاب کنید.");
 
   setHint("depositSubmitHint", "در حال ثبت واریز و آپلود رسید...");
-  setBadge("pending", "در حال ثبت واریز...");
 
   const created = await apiFetch("/mini-api/deposits", {
     method: "POST",
@@ -2742,7 +2773,6 @@ async function submitDepositWithReceipt() {
   if (fileInput) fileInput.value = "";
   setVal("depositAmountInput", "");
   setHint("depositSubmitHint", `واریزی #${depositId} با موفقیت ثبت شد و در صف بررسی ادمین قرار گرفت.`, "success");
-  setBadge("success", `واریزی #${depositId} ثبت شد`);
   await refreshWallet();
 }
 
@@ -2760,7 +2790,6 @@ async function createWithdraw() {
   if (!card_number) throw new Error("شماره کارت الزامی است.");
 
   setHint("withdrawSubmitHint", "در حال ثبت...");
-  setBadge("pending", "در حال ثبت برداشت...");
 
   const res = await apiFetch("/mini-api/withdraws", {
     method: "POST",
@@ -2782,7 +2811,6 @@ async function createWithdraw() {
   renderWithdrawPreview();
 
   setHint("withdrawSubmitHint", `درخواست برداشت #${res.id} ثبت شد.`, "success");
-  setBadge("success", `درخواست برداشت #${res.id} ثبت شد`);
   await refreshWallet();
 }
 
@@ -4267,7 +4295,6 @@ function bindWithdrawProofModalOnce() {
   if (submitBtn) {
     submitBtn.addEventListener("click", () => submitWithdrawProofModal().catch((e) => {
       setWithdrawProofHint(e.message || "ثبت فیش پرداخت ناموفق بود.", "error");
-      setBadge("error", e.message || "ثبت فیش پرداخت ناموفق بود.");
     }));
   }
 }
@@ -4338,7 +4365,6 @@ async function submitWithdrawProofModal() {
     submitBtn.textContent = "در حال ثبت...";
   }
   setWithdrawProofHint("در حال ثبت فیش پرداخت و نهایی‌سازی برداشت...", "pending");
-  setBadge("loading", "در حال ثبت فیش برداشت...");
 
   try {
     await adminSaveWithdrawProof(id, proofText, file);
@@ -4349,7 +4375,6 @@ async function submitWithdrawProofModal() {
     });
 
     setWithdrawProofHint("فیش پرداخت ثبت شد و برداشت پرداخت‌شده شد.", "success");
-    setBadge("success", `برداشت #${id} پرداخت‌شده ثبت شد`);
     closeWithdrawProofModal();
     await refreshAdminWithdraws();
   } finally {
