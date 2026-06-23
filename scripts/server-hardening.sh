@@ -40,7 +40,10 @@ EOF
 sysctl --system >/dev/null
 
 echo "[3/5] Configure cron jobs..."
-chmod +x "${PROJECT_DIR}/scripts/backup-db-to-telegram.sh" "${PROJECT_DIR}/scripts/cleanup-receipts.sh"
+chmod +x \
+  "${PROJECT_DIR}/scripts/backup-db-to-telegram.sh" \
+  "${PROJECT_DIR}/scripts/cleanup-receipts.sh" \
+  "${PROJECT_DIR}/scripts/davarna-monitor.sh"
 
 cat > /etc/cron.d/davarna-maintenance <<'EOF'
 SHELL=/bin/bash
@@ -50,10 +53,12 @@ CRON_TZ=Asia/Tehran
 30 1 * * * root cd /opt/davarna && /opt/davarna/scripts/backup-db-to-telegram.sh >> /var/log/davarna-backup.log 2>&1
 # Daily cleanup for receipt files older than 5 days at 02:00 Tehran time
 0 2 * * * root cd /opt/davarna && /opt/davarna/scripts/cleanup-receipts.sh >> /var/log/davarna-cleanup.log 2>&1
+# Davarna monitoring every 5 minutes
+*/5 * * * * root cd /opt/davarna && /opt/davarna/scripts/davarna-monitor.sh >> /var/log/davarna-monitor.log 2>&1
 EOF
 
 chmod 644 /etc/cron.d/davarna-maintenance
-touch /var/log/davarna-backup.log /var/log/davarna-cleanup.log
+touch /var/log/davarna-backup.log /var/log/davarna-cleanup.log /var/log/davarna-monitor.log
 
 if command -v systemctl >/dev/null 2>&1; then
   if systemctl list-unit-files | grep -q '^cron\.service'; then

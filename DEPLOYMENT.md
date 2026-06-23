@@ -79,9 +79,36 @@ bash /opt/davarna/scripts/backup-db-to-telegram.sh
 bash /opt/davarna/scripts/cleanup-receipts.sh
 ```
 
-3. Suggested cron (UTC):
+3. مانیتورینگ و alert به تاپیک ادمین:
+
+```bash
+chmod +x /opt/davarna/scripts/davarna-monitor.sh
+/opt/davarna/scripts/davarna-monitor.sh
+```
+
+مانیتور این موارد را چک می‌کند:
+- containerهای `backend`, `bot`, `mysql`, `redis`
+- health داخلی و عمومی دبرنا
+- host nginx
+- cron
+- fail2ban
+- disk usage
+- وضعیت بکاپ تلگرام و بکاپ لوکال، اگر مسیر/لاگ آن تنظیم شده باشد
+
+متغیرهای اختیاری در `.env.prod`:
+- `MONITOR_ALERT_CHAT_ID` اگر تنظیم نشود از `ADMIN_FORUM_CHAT_ID` و بعد `BACKUP_CHAT_ID` استفاده می‌شود.
+- `MONITOR_ALERT_TOPIC_ID` اگر تنظیم نشود از `ADMIN_TOPIC_ALERTS_ID` استفاده می‌شود.
+- `MONITOR_BOT_TOKEN` اگر تنظیم نشود از `BACKUP_BOT_TOKEN` و بعد `TELEGRAM_BOT_TOKEN` استفاده می‌شود.
+- `MONITOR_DISK_WARN_PCT=85`
+- `MONITOR_BACKUP_MAX_AGE_HOURS=14`
+- `MONITOR_REPEAT_ALERT_MINUTES=60`
+- `MONITOR_LOCAL_BACKUP_DIR=/path/to/local/backups`
+- `MONITOR_LOCAL_BACKUP_LOG=/var/log/davarna-local-backup.log`
+
+4. Suggested cron (UTC):
 - `30 1 * * *` backup
 - `0 2 * * *` cleanup receipts
+- `*/5 * * * *` monitoring
 
 ## 5) Baseline Hardening
 
