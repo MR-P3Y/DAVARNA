@@ -5,6 +5,7 @@ from .finance import DepositRequest, GatewayPayment, WithdrawRequest
 from .settings import AppSetting
 from .game import Game, GamePurchase, GameCard, GameCalledNumber
 from .game_event import GameEvent
+from .admin_audit import AdminAuditLog
 
 __all__ = [
     "User",
@@ -14,4 +15,5 @@ __all__ = [
     "AppSetting",
     "Game", "GamePurchase", "GameCard", "GameCalledNumber",
     "GameEvent",
+    "AdminAuditLog",
 ]

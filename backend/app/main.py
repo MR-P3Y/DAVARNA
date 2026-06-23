@@ -19,6 +19,7 @@ from app.routers.auth_router import router as auth_router
 from app.routers.bot_router import router as bot_router
 from app.routers.admin_users_router import router as admin_users_router
 from app.routers.mini_router import router as mini_router
+from app.routers.admin_audit_router import router as admin_audit_router
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -51,6 +52,7 @@ app.include_router(auth_router)
 app.include_router(bot_router)
 app.include_router(admin_users_router)
 app.include_router(mini_router)
+app.include_router(admin_audit_router)
 
 mini_dir = Path(__file__).resolve().parent / "static" / "mini"
 if mini_dir.exists():

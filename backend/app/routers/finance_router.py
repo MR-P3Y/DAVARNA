@@ -1,5 +1,5 @@
 # app/routers/finance_router.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -25,6 +25,7 @@ from app.schemas.finance import (
 )
 from app.services.finance_service import FinanceService
 from app.services.gateway_service import GatewayFactory, get_supported_gateways
+from app.services.admin_audit_service import AdminAuditService
 
 router = APIRouter(prefix="/finance", tags=["finance"])
 
@@ -157,6 +158,7 @@ def list_pending_deposits(
 def approve_deposit(
     deposit_id: int,
     data: ApproveDepositIn,
+    request: Request,
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
@@ -166,6 +168,22 @@ def approve_deposit(
             deposit_id,
             admin_user_id=admin.user_id,
             idempotency_key=data.idempotency_key,
+        )
+        AdminAuditService.record(
+            db,
+            admin=admin,
+            action="deposit.approve",
+            target_type="deposit_request",
+            target_id=dr.id,
+            request=request,
+            details={
+                "deposit_id": dr.id,
+                "user_id": dr.user_id,
+                "amount": dr.amount,
+                "status": dr.status,
+                "wallet_tx_id": tx.id,
+                "idempotency_key": data.idempotency_key,
+            },
         )
         db.commit()
         return {"deposit_id": dr.id, "wallet_tx_id": tx.id, "status": dr.status, "reviewed_by": admin.user_id}
@@ -180,11 +198,26 @@ def approve_deposit(
 @router.post("/admin/deposits/{deposit_id}/reject")
 def reject_deposit(
     deposit_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
     try:
         dr = FinanceService.reject_deposit(db, deposit_id, admin_user_id=admin.user_id)
+        AdminAuditService.record(
+            db,
+            admin=admin,
+            action="deposit.reject",
+            target_type="deposit_request",
+            target_id=dr.id,
+            request=request,
+            details={
+                "deposit_id": dr.id,
+                "user_id": dr.user_id,
+                "amount": dr.amount,
+                "status": dr.status,
+            },
+        )
         db.commit()
         return {"deposit_id": dr.id, "status": dr.status, "reviewed_by": admin.user_id}
     except HTTPException:
@@ -226,6 +259,7 @@ def list_pending_withdraws(
 def approve_withdraw(
     withdraw_id: int,
     data: ApproveWithdrawIn,
+    request: Request,
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
@@ -235,6 +269,22 @@ def approve_withdraw(
             withdraw_id,
             admin_user_id=admin.user_id,
             idempotency_key=data.idempotency_key,
+        )
+        AdminAuditService.record(
+            db,
+            admin=admin,
+            action="withdraw.approve",
+            target_type="withdraw_request",
+            target_id=wr.id,
+            request=request,
+            details={
+                "withdraw_id": wr.id,
+                "user_id": wr.user_id,
+                "amount": wr.amount,
+                "status": wr.status,
+                "wallet_tx_id": tx.id,
+                "idempotency_key": data.idempotency_key,
+            },
         )
         db.commit()
         return {"withdraw_id": wr.id, "wallet_tx_id": tx.id, "status": wr.status, "reviewed_by": admin.user_id}
@@ -250,6 +300,7 @@ def approve_withdraw(
 def reject_withdraw(
     withdraw_id: int,
     data: RejectWithdrawIn,
+    request: Request,
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
@@ -259,6 +310,21 @@ def reject_withdraw(
             withdraw_id=withdraw_id,
             admin_user_id=admin.user_id,
             reason=data.reason,
+        )
+        AdminAuditService.record(
+            db,
+            admin=admin,
+            action="withdraw.reject",
+            target_type="withdraw_request",
+            target_id=wr.id,
+            request=request,
+            details={
+                "withdraw_id": wr.id,
+                "user_id": wr.user_id,
+                "amount": wr.amount,
+                "status": wr.status,
+                "reason": data.reason,
+            },
         )
         db.commit()
         return {"withdraw_id": wr.id, "status": wr.status, "reviewed_by": admin.user_id}
@@ -274,6 +340,7 @@ def reject_withdraw(
 def mark_paid(
     withdraw_id: int,
     data: MarkWithdrawPaidIn,
+    request: Request,
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
@@ -283,6 +350,21 @@ def mark_paid(
             withdraw_id,
             admin_user_id=admin.user_id,
             paid_tracking=data.paid_tracking,
+        )
+        AdminAuditService.record(
+            db,
+            admin=admin,
+            action="withdraw.mark_paid",
+            target_type="withdraw_request",
+            target_id=wr.id,
+            request=request,
+            details={
+                "withdraw_id": wr.id,
+                "user_id": wr.user_id,
+                "amount": wr.amount,
+                "status": wr.status,
+                "paid_tracking": wr.paid_tracking,
+            },
         )
         db.commit()
         return {
