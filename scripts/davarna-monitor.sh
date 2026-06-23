@@ -66,6 +66,34 @@ env_or_default() {
   printf '%s' "${val:-${fallback}}"
 }
 
+monitor_config_value() {
+  local key="$1"
+  local fallback="$2"
+  local val="${!key:-}"
+  if [[ -z "${val}" ]]; then
+    val="$(read_env_value "${ENV_FILE}" "${key}")"
+  fi
+  if [[ -z "${val}" ]]; then
+    val="$(read_env_value "${BOT_ENV_FILE}" "${key}")"
+  fi
+  printf '%s' "${val:-${fallback}}"
+}
+
+positive_int_or_default() {
+  local value="$1"
+  local fallback="$2"
+  if [[ "${value}" =~ ^[0-9]+$ ]] && (( value > 0 )); then
+    printf '%s' "${value}"
+  else
+    printf '%s' "${fallback}"
+  fi
+}
+
+DISK_WARN_PCT="$(positive_int_or_default "$(monitor_config_value MONITOR_DISK_WARN_PCT 85)" 85)"
+BACKUP_MAX_AGE_HOURS="$(positive_int_or_default "$(monitor_config_value MONITOR_BACKUP_MAX_AGE_HOURS 14)" 14)"
+REPEAT_ALERT_MINUTES="$(positive_int_or_default "$(monitor_config_value MONITOR_REPEAT_ALERT_MINUTES 60)" 60)"
+BACKEND_HOST_PORT="$(positive_int_or_default "$(monitor_config_value BACKEND_HOST_PORT 18080)" 18080)"
+
 send_telegram() {
   local text="$1"
   local token chat_id topic_id
