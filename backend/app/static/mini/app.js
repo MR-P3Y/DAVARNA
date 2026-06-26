@@ -3577,6 +3577,10 @@ function renderCryptoInvoice(invoice, { open = true } = {}) {
     </div>
 
     ${status === "WAITING_PAYMENT" ? `
+      <div class="crypto-wallet-trust">
+        <strong>پرداخت مستقیم با کیف پول</strong>
+        <span>اتصال کیف پول فقط درخواست پرداخت می‌سازد؛ دبرنا رمز، عبارت بازیابی یا کلید خصوصی را نمی‌بیند. پرداخت فقط با تأیید نهایی تو داخل کیف پول ارسال می‌شود.</span>
+      </div>
       <button id="cryptoDirectPayBtn" class="small-btn primary crypto-direct-pay-btn" type="button" ${directAvailable ? "" : "disabled"}>
         ${paymentRequested ? "تراکنش ارسال شده؛ منتظر تایید شبکه" : network === "TON" ? "اتصال کیف پول TON و پرداخت" : "اتصال کیف پول TRON و پرداخت"}
       </button>
@@ -3620,6 +3624,11 @@ function renderCryptoInvoice(invoice, { open = true } = {}) {
         </div>
       </div>
     ` : ""}
+
+    <div class="crypto-invoice-guide">
+      <strong>راهنمای سریع این فاکتور</strong>
+      <span>۱) همین مبلغ دقیق را پرداخت کن. ۲) فقط از شبکه <b dir="ltr">${safeText(network === "TRON" ? "TRON/TRC20" : "TON Mainnet")}</b> استفاده کن. ۳) بعد از پرداخت، سیستم خودکار بررسی می‌کند؛ ثبت هش فقط برای بررسی سریع‌تر است.</span>
+    </div>
 
     <div class="crypto-network-warning">
       فقط از شبکه <b dir="ltr">${safeText(network === "TRON" ? "TRON (TRC20) Mainnet" : "TON Mainnet")}</b> استفاده کنید. کارمزد شبکه جدا از مبلغ فاکتور است.

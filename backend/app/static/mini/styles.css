@@ -1108,6 +1108,83 @@ body {
   gap: 6px;
 }
 
+.crypto-guide-card,
+.crypto-trust-card,
+.crypto-wallet-trust,
+.crypto-invoice-guide {
+  border: 1px solid rgba(91, 194, 225, 0.28);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(91, 194, 225, 0.055);
+}
+
+.crypto-guide-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.crypto-guide-badge {
+  border: 1px solid rgba(91, 194, 225, 0.5);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #9deaff;
+  background: rgba(91, 194, 225, 0.08);
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.crypto-guide-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.crypto-guide-copy strong,
+.crypto-trust-card strong,
+.crypto-wallet-trust strong,
+.crypto-invoice-guide strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.crypto-guide-copy p,
+.crypto-guide-copy ul,
+.crypto-trust-card span,
+.crypto-wallet-trust span,
+.crypto-invoice-guide span {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.8;
+}
+
+.crypto-guide-copy ul {
+  padding: 0 16px 0 0;
+}
+
+.crypto-trust-card {
+  display: grid;
+  gap: 5px;
+  border-color: rgba(45, 212, 191, 0.32);
+  background: rgba(45, 212, 191, 0.06);
+}
+
+.crypto-wallet-trust {
+  display: grid;
+  gap: 5px;
+  border-color: rgba(45, 212, 191, 0.3);
+  background: rgba(45, 212, 191, 0.055);
+}
+
+.crypto-invoice-guide {
+  display: grid;
+  gap: 5px;
+  border-color: rgba(246, 185, 67, 0.28);
+  background: rgba(246, 185, 67, 0.06);
+}
+
 .crypto-primary-action,
 .crypto-payment-done-btn {
   width: 100%;
@@ -1841,6 +1918,14 @@ html[data-theme="light"] .crypto-amount-input-wrap {
 html[data-theme="light"] .crypto-invoice-box {
   background: rgba(255, 255, 255, 0.94);
   border-color: rgba(23, 63, 128, 0.24);
+}
+
+html[data-theme="light"] .crypto-guide-card,
+html[data-theme="light"] .crypto-trust-card,
+html[data-theme="light"] .crypto-wallet-trust,
+html[data-theme="light"] .crypto-invoice-guide {
+  background: rgba(23, 63, 128, 0.035);
+  border-color: rgba(23, 63, 128, 0.16);
 }
 
 html[data-theme="light"] .crypto-timeline-step i {
