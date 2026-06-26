@@ -76,6 +76,7 @@ const state = {
     isSuper: false,
     roles: [],
     cryptoSettings: null,
+    bankDepositSettings: null,
     selectedGameId: 0,
     gamesById: new Map(),
     liveLinksByGame: new Map(),
@@ -5469,6 +5470,72 @@ async function refreshSuperCryptoSettings() {
   if (!state.admin.enabled || !state.admin.isSuper) return;
   const out = await apiFetch("/mini-api/admin/super/crypto-settings");
   renderSuperCryptoSettings(out);
+}
+
+function renderSuperBankDepositSettings(payload) {
+  const settings = payload || {};
+  state.admin.bankDepositSettings = settings;
+  const runtimeEnabled = Boolean(settings.runtime_enabled);
+  const effectiveEnabled = Boolean(settings.enabled);
+  const total = Number(settings.total_destinations_count || 0);
+  const active = Number(settings.active_destinations_count || 0);
+
+  const statusEl = getEl("superBankDepositStatusText");
+  if (statusEl) {
+    statusEl.textContent = `${effectiveEnabled ? "فعال برای کاربران" : "غیرفعال برای کاربران"} | کارت فعال: ${active} از ${total}`;
+    statusEl.dataset.state = effectiveEnabled ? "on" : "off";
+  }
+
+  const button = getEl("superBankDepositToggleBtn");
+  if (!button) return;
+  const canEnable = active > 0;
+  const nextEnabled = !runtimeEnabled;
+  button.disabled = nextEnabled && !canEnable;
+  button.dataset.nextEnabled = nextEnabled ? "true" : "false";
+  button.setAttribute("aria-checked", runtimeEnabled ? "true" : "false");
+  button.textContent = runtimeEnabled ? "خاموش کردن واریز کارت بانکی" : "روشن کردن واریز کارت بانکی";
+  button.classList.toggle("danger", runtimeEnabled);
+  button.classList.toggle("primary", !runtimeEnabled && canEnable);
+}
+
+async function refreshSuperBankDepositSettings() {
+  if (!state.admin.enabled || !state.admin.isSuper) return;
+  const out = await apiFetch("/mini-api/admin/super/bank-deposit-settings");
+  renderSuperBankDepositSettings(out);
+}
+
+async function toggleSuperBankDepositSettings() {
+  if (!state.admin.enabled || !state.admin.isSuper) {
+    throw new Error("این عملیات فقط برای سوپرادمین مجاز است.");
+  }
+  const button = getEl("superBankDepositToggleBtn");
+  const enabled = String(button?.dataset?.nextEnabled || "false") === "true";
+  if (button) button.disabled = true;
+  setHint(
+    "superBankDepositHint",
+    enabled ? "در حال فعال‌سازی واریز کارت بانکی..." : "در حال غیرفعال‌سازی واریز کارت بانکی..."
+  );
+  try {
+    const out = await apiFetch("/mini-api/admin/super/bank-deposit-settings", {
+      method: "PUT",
+      body: { enabled },
+    });
+    renderSuperBankDepositSettings(out);
+    setHint(
+      "superBankDepositHint",
+      enabled
+        ? "واریز کارت بانکی برای کاربران فعال شد."
+        : "ساخت واریزی کارت بانکی جدید متوقف شد؛ درخواست‌های قبلی همچنان قابل بررسی هستند.",
+      "success"
+    );
+    await refreshWallet();
+  } finally {
+    if (button && state.admin.bankDepositSettings) {
+      renderSuperBankDepositSettings(state.admin.bankDepositSettings);
+    } else if (button) {
+      button.disabled = false;
+    }
+  }
 }
 
 async function toggleSuperCryptoSettings() {

@@ -336,6 +336,7 @@ def _deposit_receipt_duplicate_meta(db: Session, dr: DepositRequest) -> tuple[st
 
 
 DEPOSIT_DESTINATIONS_SETTING_KEY = "deposit_destinations"
+BANK_DEPOSIT_RUNTIME_SETTING_KEY = "bank_deposit_enabled"
 DEPOSIT_REQUEST_DESTINATION_KEY_PREFIX = "deposit_request_destination:"
 WITHDRAW_REQUEST_SOURCE_KEY_PREFIX = "withdraw_request_source:"
 GAME_LIVE_LINK_KEY_PREFIX = "game_live_link:"
@@ -379,6 +380,17 @@ def _setting_set_json(db: Session, key: str, value: object) -> None:
         return
     row.v_json = value
     db.add(row)
+
+
+def _bank_deposit_enabled(db: Session) -> bool:
+    raw = _setting_get_json(db, BANK_DEPOSIT_RUNTIME_SETTING_KEY)
+    if raw is None:
+        return True
+    if isinstance(raw, bool):
+        return bool(raw)
+    if isinstance(raw, str):
+        return raw.strip().lower() not in {"0", "false", "no", "off", "disabled"}
+    return bool(raw)
 
 
 def _withdraw_request_source_setting_key(request_id: int) -> str:
@@ -1474,6 +1486,8 @@ def list_deposit_destinations(
     user: User = Depends(get_bot_user),
     db: Session = Depends(get_db),
 ):
+    if not _bank_deposit_enabled(db):
+        raise HTTPException(status_code=503, detail="bank deposit disabled")
     pool = _deposit_destination_pool(db, include_inactive=False)
     if not pool:
         raise HTTPException(status_code=503, detail="deposit destination is not configured")
@@ -1638,6 +1652,8 @@ def create_deposit_request(
 
     Returns: Deposit request with AWAITING_RECEIPT status
     """
+    if not _bank_deposit_enabled(db):
+        raise HTTPException(status_code=503, detail="bank deposit is disabled")
     # Validate amount
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="amount must be positive")

@@ -1,4 +1,4 @@
-﻿from aiogram import Router, F
+from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 
@@ -90,6 +90,8 @@ def _friendly_deposit_error(e: ApiError) -> str:
     detail_raw = str(getattr(e, "raw_detail", "") or e.detail or "")
     detail = detail_raw.lower()
 
+    if "bank deposit disabled" in detail or "bank deposit is disabled" in detail or "غیرفعال" in detail_raw:
+        return "واریز کارت بانکی فعلاً توسط مدیریت غیرفعال شده است. لطفاً بعداً دوباره تلاش کن."
     if "deposit destination is not configured" in detail:
         return "در حال حاضر کارت مقصد واریز تنظیم نشده است. لطفا با پشتیبانی تماس بگیر."
     if "destination_id is required" in detail:

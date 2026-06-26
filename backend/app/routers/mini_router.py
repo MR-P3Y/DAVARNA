@@ -120,6 +120,7 @@ router = APIRouter(prefix="/mini-api", tags=["mini"])
 log = logging.getLogger("mini.router")
 
 DEPOSIT_DESTINATIONS_SETTING_KEY = "deposit_destinations"
+BANK_DEPOSIT_RUNTIME_SETTING_KEY = "bank_deposit_enabled"
 DEPOSIT_REQUEST_DESTINATION_KEY_PREFIX = "deposit_request_destination:"
 WITHDRAW_REQUEST_SOURCE_KEY_PREFIX = "withdraw_request_source:"
 WITHDRAW_PAID_PROOF_KEY_PREFIX = "withdraw_paid_proof:"
@@ -154,6 +155,17 @@ def _setting_set_json(db: Session, key: str, value: object) -> None:
         return
     row.v_json = value
     db.add(row)
+
+
+def _bank_deposit_enabled(db: Session) -> bool:
+    raw = _setting_get_json(db, BANK_DEPOSIT_RUNTIME_SETTING_KEY)
+    if raw is None:
+        return True
+    if isinstance(raw, bool):
+        return bool(raw)
+    if isinstance(raw, str):
+        return raw.strip().lower() not in {"0", "false", "no", "off", "disabled"}
+    return bool(raw)
 
 
 def _normalize_destination_payload(
@@ -517,6 +529,10 @@ class MiniSuperRevokeIn(BaseModel):
 
 
 class MiniSuperCryptoUpdateIn(BaseModel):
+    enabled: bool
+
+
+class MiniSuperBankDepositUpdateIn(BaseModel):
     enabled: bool
 
 
@@ -2251,6 +2267,12 @@ def list_deposit_destinations(
     db: Session = Depends(get_db),
 ):
     _ = user_id
+    if not _bank_deposit_enabled(db):
+        return MiniDepositDestinationListOut(
+            total=0,
+            items=[],
+            instructions="واریز کارت بانکی موقتاً غیرفعال است.",
+        )
     pool = _deposit_destination_pool(db, include_inactive=False)
     items = [
         MiniDepositDestinationOut(
@@ -2279,6 +2301,8 @@ def create_deposit(
     db: Session = Depends(get_db),
 ):
     enforce_write_rate_limit(int(user_id))
+    if not _bank_deposit_enabled(db):
+        raise HTTPException(status_code=503, detail="واریز کارت بانکی توسط مدیریت غیرفعال شده است.")
     pool = _deposit_destination_pool(db, include_inactive=False)
     selected = _find_destination_by_id(pool, payload.destination_id)
     if payload.destination_id and selected is None:
@@ -3984,6 +4008,59 @@ def mini_super_update_crypto_settings(
     )
     db.commit()
     return _mini_super_crypto_status(db)
+
+
+def _mini_super_bank_deposit_status(db: Session) -> dict[str, Any]:
+    all_destinations = _deposit_destination_pool(db, include_inactive=True)
+    active_destinations = [it for it in all_destinations if bool(it.get("is_active", True))]
+    runtime_enabled = _bank_deposit_enabled(db)
+    return {
+        "runtime_enabled": bool(runtime_enabled),
+        "enabled": bool(runtime_enabled and active_destinations),
+        "total_destinations_count": int(len(all_destinations)),
+        "active_destinations_count": int(len(active_destinations)),
+    }
+
+
+@router.get("/admin/super/bank-deposit-settings")
+def mini_super_bank_deposit_settings(
+    ident: MiniAdminIdentity = Depends(get_mini_super_admin_identity),
+    db: Session = Depends(get_db),
+):
+    _ = ident
+    return _mini_super_bank_deposit_status(db)
+
+
+@router.put("/admin/super/bank-deposit-settings")
+def mini_super_update_bank_deposit_settings(
+    payload: MiniSuperBankDepositUpdateIn,
+    request: Request,
+    ident: MiniAdminIdentity = Depends(get_mini_super_admin_identity),
+    db: Session = Depends(get_db),
+):
+    previous = _bank_deposit_enabled(db)
+    if bool(payload.enabled):
+        all_destinations = _deposit_destination_pool(db, include_inactive=True)
+        active_destinations = [it for it in all_destinations if bool(it.get("is_active", True))]
+        if not active_destinations:
+            raise HTTPException(status_code=409, detail="برای فعال‌سازی واریز کارت بانکی حداقل یک کارت فعال لازم است.")
+
+    _setting_set_json(db, BANK_DEPOSIT_RUNTIME_SETTING_KEY, bool(payload.enabled))
+    AdminAuditService.record(
+        db,
+        admin=_mini_to_admin_identity(ident),
+        action="settings.update",
+        target_type="app_setting",
+        target_id=None,
+        request=request,
+        details={
+            "key": BANK_DEPOSIT_RUNTIME_SETTING_KEY,
+            "previous_enabled": bool(previous),
+            "new_enabled": bool(payload.enabled),
+        },
+    )
+    db.commit()
+    return _mini_super_bank_deposit_status(db)
 
 
 @router.get("/admin/super/crypto-health")
