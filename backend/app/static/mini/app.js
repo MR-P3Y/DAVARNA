@@ -5493,15 +5493,34 @@ function renderSuperBankDepositSettings(payload) {
   button.disabled = nextEnabled && !canEnable;
   button.dataset.nextEnabled = nextEnabled ? "true" : "false";
   button.setAttribute("aria-checked", runtimeEnabled ? "true" : "false");
-  button.textContent = runtimeEnabled ? "خاموش کردن واریز کارت بانکی" : "روشن کردن واریز کارت بانکی";
+  button.textContent = runtimeEnabled ? "خاموش کردن کارت‌به‌کارت" : "روشن کردن کارت‌به‌کارت";
   button.classList.toggle("danger", runtimeEnabled);
   button.classList.toggle("primary", !runtimeEnabled && canEnable);
 }
 
 async function refreshSuperBankDepositSettings() {
   if (!state.admin.enabled || !state.admin.isSuper) return;
-  const out = await apiFetch("/mini-api/admin/super/bank-deposit-settings");
-  renderSuperBankDepositSettings(out);
+  try {
+    const out = await apiFetch("/mini-api/admin/super/bank-deposit-settings");
+    renderSuperBankDepositSettings(out);
+    setHint("superBankDepositHint", "");
+  } catch (e) {
+    const statusEl = getEl("superBankDepositStatusText");
+    if (statusEl) {
+      statusEl.textContent = "دریافت وضعیت ناموفق بود؛ از دکمه یا ربات سوپرادمین استفاده کن.";
+      statusEl.dataset.state = "off";
+    }
+    const button = getEl("superBankDepositToggleBtn");
+    if (button) {
+      button.disabled = false;
+      button.dataset.nextEnabled = "false";
+      button.setAttribute("aria-checked", "true");
+      button.textContent = "خاموش کردن کارت‌به‌کارت";
+      button.classList.add("danger");
+      button.classList.remove("primary");
+    }
+    setLocalError("superBankDepositHint", e);
+  }
 }
 
 async function toggleSuperBankDepositSettings() {
