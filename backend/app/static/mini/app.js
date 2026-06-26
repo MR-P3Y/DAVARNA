@@ -6133,7 +6133,29 @@ function wireWalletDynamic() {
 }
 
 
+function configureDepositReceiptPicker() {
+  const input = getEl("depositReceiptFileInput");
+  const hint = getEl("depositReceiptPickerHint");
+  const pickerLabel = document.querySelector(".receipt-picker-btn span");
+  if (!input) return;
+
+  const ua = String(navigator.userAgent || "").toLowerCase();
+  const isMobileLike = /android|iphone|ipad|ipod|mobile/.test(ua) || Boolean(tg?.platform && String(tg.platform).toLowerCase() !== "tdesktop");
+
+  if (isMobileLike) {
+    input.setAttribute("accept", "image/*");
+    // Do not set "capture": capture usually opens the camera. For receipt screenshots we want the gallery/file picker.
+    if (hint) hint.textContent = "اسکرین‌شات رسید را از گالری انتخاب کن. عکس واضح و خوانا باشد.";
+    if (pickerLabel) pickerLabel.textContent = "انتخاب عکس رسید از گالری";
+  } else {
+    input.setAttribute("accept", "image/*,.pdf");
+    if (hint) hint.textContent = "در لپ‌تاپ، عکس رسید یا PDF پرداخت را انتخاب کن.";
+    if (pickerLabel) pickerLabel.textContent = "انتخاب رسید از فایل";
+  }
+}
+
 function wireWalletUxHelpers() {
+  configureDepositReceiptPicker();
   document.querySelectorAll(".deposit-mode-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (btn.disabled) return;
@@ -6217,10 +6239,11 @@ function wireWalletUxHelpers() {
       const sizeKb = Math.max(1, Math.round(Number(file.size || 0) / 1024));
       if (String(file.type || "").startsWith("image/")) {
         state.receiptPreviewUrl = URL.createObjectURL(file);
-        box.innerHTML = `<strong>پیش‌نمایش رسید:</strong><div>${name} — ${safeText(sizeKb)} KB</div><img src="${state.receiptPreviewUrl}" alt="پیش‌نمایش رسید" />`;
+        box.innerHTML = `<strong>رسید انتخاب شد</strong><div>${name} — ${safeText(sizeKb)} KB</div><img src="${state.receiptPreviewUrl}" alt="پیش‌نمایش رسید" /><small>اگر مبلغ، تاریخ یا شماره پیگیری خوانا نیست، عکس واضح‌تری انتخاب کن.</small>`;
       } else {
-        box.innerHTML = `<strong>فایل رسید انتخاب شد:</strong><div>${name} — ${safeText(sizeKb)} KB</div>`;
+        box.innerHTML = `<strong>فایل رسید انتخاب شد</strong><div>${name} — ${safeText(sizeKb)} KB</div><small>اگر فایل PDF است، مطمئن شو مبلغ و شماره پیگیری داخل آن مشخص است.</small>`;
       }
+      setHint("depositSubmitHint", "رسید انتخاب شد. حالا ثبت واریزی را بزن.", "success");
       box.classList.remove("hidden");
       triggerLightHaptic("success");
     });

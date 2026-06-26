@@ -177,6 +177,16 @@
                 </div>
 
                 <div id="bankDepositPanel" class="deposit-mode-panel">
+                  <div class="bank-deposit-guide" aria-label="راهنمای واریز کارت بانکی">
+                    <strong>راهنمای کوتاه واریز کارت بانکی</strong>
+                    <span>مبلغ را وارد کن، کارت مقصد را انتخاب و کپی کن، بعد رسید پرداخت را از گالری/فایل انتخاب کن. درخواست بعد از بررسی ادمین به کیف پولت اضافه می‌شود.</span>
+                    <ul>
+                      <li>مبلغ رسید باید با مبلغ ثبت‌شده یکی باشد.</li>
+                      <li>عکس رسید واضح باشد و شماره پیگیری/زمان پرداخت دیده شود.</li>
+                      <li>برای موبایل، معمولاً اسکرین‌شات رسید را از گالری انتخاب کن.</li>
+                    </ul>
+                  </div>
+
                 <div class="deposit-step">
                   <div class="deposit-step-no">1</div>
                   <div class="deposit-step-body">
@@ -207,8 +217,16 @@
                 <div class="deposit-step">
                   <div class="deposit-step-no">3</div>
                   <div class="deposit-step-body">
-                    <label id="depositReceiptLabel" for="depositReceiptFileInput">رسید</label>
+                    <label id="depositReceiptLabel" for="depositReceiptFileInput">رسید پرداخت</label>
+                    <div class="deposit-receipt-help">
+                      <strong>آپلود رسید</strong>
+                      <span id="depositReceiptPickerHint">در موبایل، عکس رسید را از گالری انتخاب کن. در لپ‌تاپ، عکس یا PDF رسید را انتخاب کن.</span>
+                    </div>
                     <input id="depositReceiptFileInput" type="file" accept="image/*,.pdf" />
+                    <label class="receipt-picker-btn" for="depositReceiptFileInput">
+                      <span>انتخاب رسید از گالری / فایل</span>
+                      <small>عکس رسید یا PDF</small>
+                    </label>
                     <div id="receiptPreview" class="receipt-preview hidden"></div>
                   </div>
                 </div>
