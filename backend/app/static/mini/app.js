@@ -231,7 +231,7 @@ const CARD_HISTORY_LIMIT = 10;
 const LIVE_EVENTS_LIMIT = 15;
 
 const UI_TEXT = {
-  brandTitle: "دبرنا حلیم یگن طیار",
+  brandTitle: "دبرنا",
   headerUserLabel: "کاربر",
   headerWalletMiniLabel: "کیف پول",
   gamesTitle: "بازی‌ها",
@@ -692,7 +692,7 @@ function inferDisplayName() {
   const ln = String(tgUser?.last_name || "").trim();
   const full = `${fn} ${ln}`.trim();
   if (full) return full;
-  return "کاربر دبرنا حلیم یگن طیار";
+  return "کاربر دبرنا";
 }
 
 function updateHeaderWallet(balance) {
