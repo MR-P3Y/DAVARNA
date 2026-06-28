@@ -11,7 +11,7 @@ DEFAULT_SETTINGS = {
     "card_rows": 5,
     "card_cols": 4,
     "numbers_per_card": 20,
-    "max_number": 99,
+    "max_number": 90,
 }
 
 def main():

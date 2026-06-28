@@ -339,7 +339,7 @@ function localizeShell() {
     withdrawCardInput: "شماره کارت 16 رقمی",
     withdrawIbanInput: "IRxxxxxxxxxxxxxxxxxxxxxxxx",
     withdrawAccountInput: "شماره حساب (اختیاری)",
-    adminCallNumberInput: "عدد بین 1 تا 99",
+    adminCallNumberInput: "عدد بین 1 تا 90",
     adminCancelReasonInput: "علت لغو بازی قبل از شروع",
     adminLiveLinkInput: "https://...",
     adminCreateGroupIdInput: "مثال: -1001234567890",
@@ -5743,7 +5743,7 @@ async function adminStartGame() {
 async function adminCallNumber() {
   const { gid } = requireAdminGameStatus(["RUNNING"], "اعلام عدد");
   const number = Number(getVal("adminCallNumberInput") || "0");
-  if (!number || number < 1 || number > 99) throw new Error("عدد اعلام باید بین 1 تا 99 باشد.");
+  if (!number || number < 1 || number > 90) throw new Error("عدد اعلام باید بین 1 تا 90 باشد.");
   setAdminLocalHint("adminCallActionHint", "در حال ثبت عدد...");
   await apiFetch(`/mini-api/admin/games/${gid}/call`, {
     method: "POST",

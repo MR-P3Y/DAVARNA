@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
@@ -216,7 +216,7 @@ class GameService:
 
         # build cards with UNIQUE(game_id,fingerprint) retry (SAFE: SAVEPOINT per card)
         # build cards with UNIQUE(game_id,fingerprint) retry (SAFE: SAVEPOINT per card)
-        max_number = int(GameService._get_setting(db, GameService.KEY_MAX_NUMBER, 99))
+        max_number = int(GameService._get_setting(db, GameService.KEY_MAX_NUMBER, 90))
         cards: list[GameCard] = []
 
         MAX_RETRY = 5  # ✅ طبق requirement
@@ -557,7 +557,7 @@ class GameService:
             if str(game.status) != "RUNNING":
                 raise HTTPException(status_code=400, detail="game is not RUNNING")
 
-            max_number = int(GameService._get_setting(db, GameService.KEY_MAX_NUMBER, 99))
+            max_number = int(GameService._get_setting(db, GameService.KEY_MAX_NUMBER, 90))
             if number < 1 or number > max_number:
                 raise HTTPException(status_code=400, detail=f"number must be 1..{max_number}")
 

@@ -1611,7 +1611,7 @@ def game_snapshot(
     players_count = int(len(players))
     winners_count = int(len(winner_user_ids))
     remaining_players = max(0, players_count - winners_count)
-    max_number = int(GameService._get_setting(db, GameService.KEY_MAX_NUMBER, 99))
+    max_number = int(GameService._get_setting(db, GameService.KEY_MAX_NUMBER, 90))
     max_number = max(1, max_number)
     called_progress_pct = int(round((len(called_numbers) / max_number) * 100)) if called_numbers else 0
 
