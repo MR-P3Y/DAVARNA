@@ -5677,9 +5677,14 @@ html[data-theme="light"] #withdrawProofModal .withdraw-proof-actions {
 }
 
 .admin-call-keypad {
+  direction: ltr;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
+}
+
+.admin-call-keypad button {
+  direction: rtl;
 }
 
 .admin-call-keypad button {
