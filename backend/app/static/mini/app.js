@@ -34,6 +34,10 @@ const state = {
   cryptoInvoiceHintText: "",
   cryptoInvoiceHintType: "",
   cryptoTxHashDraft: "",
+  notifications: [],
+  notificationReadIds: new Set(),
+  notificationsOpen: false,
+  latestLiveBarGameId: 0,
   cardsPollTimer: null,
   cardsPrevCalledByGame: {},
   cardsLatestSeenEventByGame: {},
@@ -228,6 +232,7 @@ const ACTIVE_GAME_STATUSES = new Set(["LOBBY", "RUNNING"]);
 const CARDS_REFRESH_INTERVAL_MS = 2200;
 const GLOBAL_REFRESH_INTERVAL_MS = 12000;
 const ADMIN_NOTIFY_STORAGE_KEY = "davarna_admin_notify_seen_v1";
+const NOTIFICATION_READ_STORAGE_KEY = "davarna_notification_read_v1";
 const ADMIN_NOTIFY_HIDE_MS = 8500;
 const HISTORY_LIST_LIMIT = 15;
 const CARD_HISTORY_LIMIT = 10;
@@ -776,6 +781,230 @@ function walletReasonLabel(reason) {
   if (WALLET_REASON_LABELS[key]) return WALLET_REASON_LABELS[key];
   if (!key) return "-";
   return key.replaceAll("_", " ");
+}
+
+function loadNotificationReadIds() {
+  try {
+    const raw = localStorage.getItem(NOTIFICATION_READ_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    state.notificationReadIds = new Set(Array.isArray(parsed) ? parsed.map((x) => String(x)) : []);
+  } catch (_) {
+    state.notificationReadIds = new Set();
+  }
+}
+
+function saveNotificationReadIds() {
+  try {
+    localStorage.setItem(
+      NOTIFICATION_READ_STORAGE_KEY,
+      JSON.stringify([...state.notificationReadIds].slice(-300))
+    );
+  } catch (_) {}
+}
+
+function notificationSeverityLabel(severity) {
+  const key = String(severity || "").toLowerCase();
+  if (key === "success") return "موفق";
+  if (key === "danger" || key === "error") return "نیازمند توجه";
+  if (key === "pending") return "در انتظار";
+  return "اطلاع";
+}
+
+function updateNotificationBadge() {
+  const badge = getEl("notificationsBadge");
+  const count = (state.notifications || []).filter((item) => !state.notificationReadIds.has(String(item?.id || ""))).length;
+  if (badge) {
+    badge.textContent = toFaDigits(count);
+    badge.classList.toggle("hidden", count <= 0);
+  }
+  const meta = getEl("notificationCenterMeta");
+  if (meta) {
+    meta.textContent = count > 0
+      ? `${toFaDigits(count)} اعلان خوانده‌نشده`
+      : "همه اعلان‌ها خوانده شده‌اند";
+  }
+}
+
+function renderNotificationCenter() {
+  const root = getEl("notificationList");
+  if (!root) return;
+  const items = Array.isArray(state.notifications) ? state.notifications : [];
+  if (!items.length) {
+    root.innerHTML = '<div class="empty">اعلان جدیدی وجود ندارد.</div>';
+    updateNotificationBadge();
+    return;
+  }
+  root.innerHTML = items
+    .map((item) => {
+      const id = String(item?.id || "");
+      const read = state.notificationReadIds.has(id);
+      const severity = String(item?.severity || "info").toLowerCase();
+      const receiptKind = String(item?.receipt_kind || "");
+      const receiptId = Number(item?.receipt_id || 0);
+      const receiptBtn = receiptKind && receiptId
+        ? `<button class="small-btn notification-receipt-btn" data-kind="${safeText(receiptKind)}" data-id="${safeText(receiptId)}" type="button">رسید</button>`
+        : "";
+      return `
+        <div class="notification-item ${read ? "is-read" : "is-unread"}" data-id="${safeText(id)}" data-target="${safeText(item?.target_view || "wallet")}">
+          <div class="notification-item-main">
+            <span class="notification-status ${safeText(severity)}">${safeText(read ? "خوانده شد" : "در انتظار")}</span>
+            <strong>${safeText(item?.title || "اعلان")}</strong>
+            <p>${safeText(item?.body || "")}</p>
+            <small>${safeText(formatFaDateTime(item?.created_at))} | ${safeText(notificationSeverityLabel(severity))}</small>
+          </div>
+          <div class="notification-item-actions">
+            ${receiptBtn}
+            <button class="small-btn notification-open-btn" type="button">مشاهده</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  root.querySelectorAll(".notification-item").forEach((row) => {
+    const markRead = () => {
+      const id = String(row.getAttribute("data-id") || "");
+      if (id) state.notificationReadIds.add(id);
+      saveNotificationReadIds();
+      updateNotificationBadge();
+      row.classList.remove("is-unread");
+      row.classList.add("is-read");
+    };
+    row.querySelector(".notification-open-btn")?.addEventListener("click", () => {
+      markRead();
+      const target = String(row.getAttribute("data-target") || "wallet");
+      closeNotificationCenter();
+      switchToView(["games", "cards", "wallet", "admin"].includes(target) ? target : "wallet");
+    });
+    row.querySelector(".notification-receipt-btn")?.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      markRead();
+      const btn = ev.currentTarget;
+      openReceiptModal(String(btn.getAttribute("data-kind") || ""), Number(btn.getAttribute("data-id") || 0))
+        .catch((e) => showToast(localizeApiError(e?.message || e), "error"));
+    });
+  });
+  updateNotificationBadge();
+}
+
+async function refreshNotifications({ silent = true } = {}) {
+  try {
+    const out = await apiFetch("/mini-api/me/notifications?limit=50");
+    state.notifications = Array.isArray(out?.items) ? out.items : [];
+    renderNotificationCenter();
+  } catch (error) {
+    if (!silent) showToast(localizeApiError(error?.message || error), "error");
+  }
+}
+
+function openNotificationCenter() {
+  state.notificationsOpen = true;
+  const modal = getEl("notificationCenter");
+  if (!modal) return;
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  renderNotificationCenter();
+  refreshNotifications({ silent: false }).catch(() => {});
+}
+
+function closeNotificationCenter() {
+  state.notificationsOpen = false;
+  const modal = getEl("notificationCenter");
+  if (!modal) return;
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function markAllNotificationsRead() {
+  (state.notifications || []).forEach((item) => {
+    const id = String(item?.id || "");
+    if (id) state.notificationReadIds.add(id);
+  });
+  saveNotificationReadIds();
+  renderNotificationCenter();
+}
+
+function receiptStatusLabel(kind, status) {
+  const k = String(kind || "").toLowerCase();
+  if (k === "bank_deposit") return depositStatusLabel(status);
+  if (k === "withdraw") return withdrawStatusLabel(status);
+  if (k === "crypto_deposit") return cryptoStatusLabel(status);
+  return statusLabel(status);
+}
+
+function receiptAmountText(receipt) {
+  const sign = String(receipt?.direction || "").toUpperCase() === "DEBIT" ? "-" : "+";
+  return `${sign}${toman(receipt?.amount || 0)}`;
+}
+
+function renderReceiptModal(receipt) {
+  const body = getEl("receiptModalBody");
+  const title = getEl("receiptModalTitle");
+  if (!body) return;
+  if (title) title.textContent = String(receipt?.title || "رسید تراکنش");
+  const items = Array.isArray(receipt?.items) ? receipt.items : [];
+  body.innerHTML = `
+    <div class="receipt-hero">
+      <div class="receipt-seal">✓</div>
+      <div>
+        <strong>${safeText(receipt?.title || "رسید تراکنش")}</strong>
+        <span>${safeText(receiptStatusLabel(receipt?.kind, receipt?.status))}</span>
+      </div>
+    </div>
+    <div class="receipt-grid">
+      <div><span>مبلغ</span><strong>${safeText(receiptAmountText(receipt))}</strong></div>
+      <div><span>کد پیگیری</span><strong dir="ltr">${safeText(receipt?.tracking_code || "-")}</strong></div>
+      <div><span>تاریخ ثبت</span><strong>${safeText(formatFaDateTime(receipt?.created_at))}</strong></div>
+      <div><span>تاریخ نهایی</span><strong>${safeText(formatFaDateTime(receipt?.completed_at))}</strong></div>
+    </div>
+    <div class="receipt-detail-list">
+      ${items.map((item) => `
+        <div class="receipt-detail-row">
+          <span>${safeText(item?.label || "-")}</span>
+          <strong dir="auto">${safeText(item?.value || "-")}</strong>
+        </div>
+      `).join("")}
+    </div>
+    <div class="receipt-actions">
+      ${receipt?.explorer_url ? `<a class="small-btn primary" href="${safeText(receipt.explorer_url)}" target="_blank" rel="noopener noreferrer">مشاهده در Explorer</a>` : ""}
+      <button id="receiptCopyBtn" class="small-btn" type="button">کپی رسید</button>
+    </div>
+  `;
+  getEl("receiptCopyBtn")?.addEventListener("click", () => {
+    const text = [
+      receipt?.title || "رسید تراکنش",
+      `وضعیت: ${receiptStatusLabel(receipt?.kind, receipt?.status)}`,
+      `مبلغ: ${receiptAmountText(receipt)}`,
+      `کد پیگیری: ${receipt?.tracking_code || "-"}`,
+      `تاریخ ثبت: ${formatFaDateTime(receipt?.created_at)}`,
+      ...items.map((item) => `${item?.label || "-"}: ${item?.value || "-"}`),
+    ].join("\n");
+    copyTextToClipboard(text)
+      .then(() => showToast("رسید کپی شد.", "success"))
+      .catch((e) => showToast(localizeApiError(e?.message || e), "error"));
+  });
+}
+
+async function openReceiptModal(kind, id) {
+  const normalized = String(kind || "").trim();
+  const itemId = Number(id || 0);
+  if (!normalized || !itemId) throw new Error("رسید انتخاب‌شده نامعتبر است.");
+  const modal = getEl("receiptModal");
+  const body = getEl("receiptModalBody");
+  if (body) body.innerHTML = '<div class="cards-skeleton"><div class="skeleton-line lg"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>';
+  if (modal) {
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+  }
+  const receipt = await apiFetch(`/mini-api/me/receipts/${encodeURIComponent(normalized)}/${itemId}`);
+  renderReceiptModal(receipt);
+}
+
+function closeReceiptModal() {
+  const modal = getEl("receiptModal");
+  if (!modal) return;
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
 }
 
 const WIN_PATTERN_LABELS = {
@@ -1523,6 +1752,71 @@ function drawGames(items) {
 });
 }
 
+function pickLiveBarGame(items = state.gamesCache) {
+  const list = Array.isArray(items) ? items : [];
+  const selectedId = Number(state.selectedGameId || 0);
+  if (selectedId > 0) {
+    const selected = list.find((g) => Number(g?.id || 0) === selectedId);
+    if (selected) return selected;
+  }
+  const running = list.find((g) => String(g?.status || "").toUpperCase() === "RUNNING");
+  if (running) return running;
+  const lobby = list.find((g) => String(g?.status || "").toUpperCase() === "LOBBY");
+  return lobby || null;
+}
+
+function renderLiveGameBar(items = state.gamesCache) {
+  const bar = getEl("liveGameBar");
+  if (!bar) return;
+  const game = pickLiveBarGame(items);
+  if (!game) {
+    state.latestLiveBarGameId = 0;
+    bar.classList.add("hidden");
+    bar.innerHTML = "";
+    return;
+  }
+  const gid = Number(game.id || 0);
+  const snap = state.gameSnapshots.get(gid);
+  const st = snap?.state || {};
+  const called = Array.isArray(st.called_numbers) ? st.called_numbers : [];
+  const lastNumber = st.last_number ?? (called.length ? called[called.length - 1] : null);
+  const myCards = Number(st.my_cards_count ?? state.myCardsByGame.get(gid) ?? 0);
+  const statusKey = String(st.status || game.status || "").toUpperCase();
+  const canBuy = statusKey === "LOBBY";
+  state.latestLiveBarGameId = gid;
+  bar.classList.remove("hidden");
+  bar.innerHTML = `
+    <div class="live-game-bar-main">
+      <span class="live-game-bar-status ${safeText(statusKey.toLowerCase())}">${safeText(statusLabel(statusKey))}</span>
+      <strong>بازی #${safeText(gid)}</strong>
+      <span>آخرین عدد: <b>${safeText(lastNumber ?? "-")}</b></span>
+      <span>کارت‌های من: <b>${safeText(myCards)}</b></span>
+      <span>${canBuy ? "خرید کارت باز است" : "خرید کارت بسته است"}</span>
+    </div>
+    <div class="live-game-bar-actions">
+      <button class="small-btn live-bar-open-btn" data-game-id="${safeText(gid)}" type="button">وضعیت زنده</button>
+      <button class="small-btn primary live-bar-buy-btn" data-game-id="${safeText(gid)}" type="button" ${canBuy ? "" : "disabled"}>خرید کارت</button>
+    </div>
+  `;
+  bar.querySelector(".live-bar-open-btn")?.addEventListener("click", () => {
+    openLiveGame(gid)
+      .then(() => {
+        switchToView("games");
+        getEl("liveTitle")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      })
+      .catch((e) => setLocalError("liveActionHint", e));
+  });
+  bar.querySelector(".live-bar-buy-btn")?.addEventListener("click", () => {
+    if (!canBuy) return;
+    openLiveGame(gid)
+      .then(() => {
+        switchToView("games");
+        getEl("buyActionForm")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      })
+      .catch((e) => setLocalError("buyStatusHint", e));
+  });
+}
+
 function formatDuration(sec) {
   const s = Number(sec || 0);
   if (s <= 0) return "-";
@@ -2057,6 +2351,7 @@ function renderLive(snapshot, options = {}) {
     notifyFresh: Boolean(options.notifyFresh),
     notifyAfterId: Number(options.notifyAfterId || 0),
   });
+  renderLiveGameBar(state.gamesCache);
 }
 
 function pickAutoLiveGameId(gameItems) {
@@ -2441,6 +2736,7 @@ async function refreshGames() {
   });
 
   await syncAutoLiveGame(gameItems);
+  renderLiveGameBar(gameItems);
   drawGames(gameItems);
   drawRecentStats(state.recentGamesStats);
   drawTrustStrip(state.dashboardTrust);
@@ -3129,11 +3425,21 @@ function drawWallet(balancePayload, txPayload) {
             <strong>${safeText(reason)}</strong><br />
             <span class="meta">${safeText(formatFaDateTime(tx.created_at))}</span>
           </div>
-          <div><strong>${sign}${toman(tx.amount || 0)}</strong></div>
+          <div class="tx-chip-side">
+            <strong>${sign}${toman(tx.amount || 0)}</strong>
+            <button class="small-btn receipt-open-btn" data-kind="wallet_tx" data-id="${safeText(tx.id)}" type="button">رسید</button>
+          </div>
         </div>
       `;
     })
     .join("");
+
+  txRoot.querySelectorAll(".receipt-open-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openReceiptModal(String(btn.getAttribute("data-kind") || ""), Number(btn.getAttribute("data-id") || 0))
+        .catch((e) => showToast(localizeApiError(e?.message || e), "error"));
+    });
+  });
 }
 
 function drawDepositRequests(payload) {
@@ -3153,9 +3459,19 @@ function drawDepositRequests(payload) {
         <p>وضعیت: ${safeText(depositStatusLabel(d.status))} | مبلغ: ${toman(d.amount || 0)}</p>
         <div class="meta">کارت مقصد: ${safeText(String(d.destination_title || "-"))}</div>
         <div class="meta">زمان ثبت: ${safeText(formatFaDateTime(d.created_at))}</div>
+        <div class="admin-item-actions">
+          <button class="small-btn receipt-open-btn" data-kind="bank_deposit" data-id="${safeText(d.id)}" type="button">رسید واریز</button>
+        </div>
       </div>
     `)
     .join("");
+
+  root.querySelectorAll(".receipt-open-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openReceiptModal(String(btn.getAttribute("data-kind") || ""), Number(btn.getAttribute("data-id") || 0))
+        .catch((e) => showToast(localizeApiError(e?.message || e), "error"));
+    });
+  });
 }
 
 function compactCryptoAmount(value) {
@@ -3184,8 +3500,47 @@ function setDepositMode(mode) {
   }
 }
 
+function renderCryptoHealthSummary(payload) {
+  const root = getEl("cryptoHealthSummary");
+  if (!root) return;
+  const enabled = Boolean(payload?.enabled);
+  const options = Array.isArray(payload?.options) ? payload.options : [];
+  if (!enabled || !options.length) {
+    root.innerHTML = `
+      <div class="crypto-health-card is-off">
+        <strong>وضعیت رمزارز</strong>
+        <span>پرداخت ارز دیجیتال فعلاً برای کاربران فعال نیست.</span>
+      </div>
+    `;
+    return;
+  }
+  root.innerHTML = options.map((item) => {
+    const healthy = Boolean(item?.healthy);
+    const network = String(item?.network || "-").toUpperCase();
+    const asset = String(item?.asset || "-").toUpperCase();
+    const provider = String(item?.rate_provider || "-");
+    const rate = item?.rate_toman ? toman(item.rate_toman) : "-";
+    const checkedAt = item?.checked_at ? formatFaDateTime(item.checked_at) : "-";
+    const reason = String(item?.unavailable_reason || "").trim();
+    return `
+      <div class="crypto-health-card ${healthy ? "is-ok" : "is-error"}">
+        <div>
+          <strong dir="ltr">${safeText(asset)} / ${safeText(network)}</strong>
+          <span>${healthy ? "فعال و آماده صدور فاکتور" : safeText(reason || "موقتاً غیرفعال")}</span>
+        </div>
+        <div class="crypto-health-meta">
+          <span>نرخ: <b>${safeText(rate)}</b></span>
+          <span>منبع: <b>${safeText(provider)}</b></span>
+          <span>آخرین بررسی: <b>${safeText(checkedAt)}</b></span>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
 function drawCryptoOptions(payload) {
   state.cryptoOptions = payload || null;
+  renderCryptoHealthSummary(payload);
   const enabled = Boolean(payload?.enabled && Array.isArray(payload?.options) && payload.options.length);
   const modeBtn = getEl("cryptoDepositModeBtn");
   if (modeBtn) {
@@ -3916,6 +4271,7 @@ function drawCryptoDeposits(payload) {
       <div class="meta">زمان ثبت: ${safeText(formatFaDateTime(item.created_at))}</div>
       <div class="admin-item-actions">
         <button class="small-btn crypto-history-open-btn" data-id="${safeText(item.id)}" type="button">مشاهده</button>
+        <button class="small-btn receipt-open-btn" data-kind="crypto_deposit" data-id="${safeText(item.id)}" type="button">رسید</button>
       </div>
     </div>
   `).join("");
@@ -3923,6 +4279,12 @@ function drawCryptoDeposits(payload) {
     btn.addEventListener("click", () => {
       const id = Number(btn.getAttribute("data-id") || 0);
       refreshCryptoInvoice(id, { scroll: true }).catch((e) => setLocalError("cryptoSubmitHint", e));
+    });
+  });
+  root.querySelectorAll(".receipt-open-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openReceiptModal(String(btn.getAttribute("data-kind") || ""), Number(btn.getAttribute("data-id") || 0))
+        .catch((e) => showToast(localizeApiError(e?.message || e), "error"));
     });
   });
 }
@@ -4045,9 +4407,19 @@ function drawWithdrawRequests(payload) {
         <h3>برداشت #${w.id}</h3>
         <p>وضعیت: ${safeText(withdrawStatusLabel(w.status))} | مبلغ: ${toman(w.amount || 0)}</p>
         <div class="meta">زمان ثبت: ${safeText(formatFaDateTime(w.created_at))}</div>
+        <div class="admin-item-actions">
+          <button class="small-btn receipt-open-btn" data-kind="withdraw" data-id="${safeText(w.id)}" type="button">رسید برداشت</button>
+        </div>
       </div>
     `)
     .join("");
+
+  root.querySelectorAll(".receipt-open-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openReceiptModal(String(btn.getAttribute("data-kind") || ""), Number(btn.getAttribute("data-id") || 0))
+        .catch((e) => showToast(localizeApiError(e?.message || e), "error"));
+    });
+  });
 }
 
 function drawWinTimeline() {
@@ -4091,6 +4463,9 @@ function drawWinTimeline() {
             زمان: ${safeText(formatFaDateTime(w.created_at))}
           </div>
           <div id="adminWdrWalletStatus${safeText(w.id)}" class="withdraw-wallet-status">وضعیت کیف پول هنوز بروزرسانی نشده است.</div>
+          <div class="admin-item-actions">
+            <button class="small-btn receipt-open-btn" data-kind="prize" data-id="${safeText(w.id)}" type="button">رسید جایزه</button>
+          </div>
           <div class="history-open-hint">برای مشاهده جزئیات برد لمس کنید</div>
         </div>
       `;
@@ -4102,6 +4477,13 @@ function drawWinTimeline() {
       const gameId = Number(row.getAttribute("data-game-id") || "0");
       if (!gameId) return;
       openHistoryModalForGame(gameId, { source: "wins" }).catch((e) => renderCardsPullHint(localizeApiError(e?.message || e), "error"));
+    });
+  });
+  root.querySelectorAll(".receipt-open-btn").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      openReceiptModal(String(btn.getAttribute("data-kind") || ""), Number(btn.getAttribute("data-id") || 0))
+        .catch((e) => showToast(localizeApiError(e?.message || e), "error"));
     });
   });
 }
@@ -4151,6 +4533,7 @@ async function refreshWallet() {
   if (cryptoOptions) drawCryptoOptions(cryptoOptions);
   if (cryptoDeposits) drawCryptoDeposits(cryptoDeposits);
   drawWinTimeline();
+  refreshNotifications({ silent: true }).catch(() => {});
 }
 
 function drawDepositDestinations(payload) {
@@ -5200,8 +5583,13 @@ function renderAdminUsersProfile(payload) {
   const winsTotalAmount = Number(stats?.wins_total_amount || 0);
   const winsTotalCount = Number(stats?.wins_total_count || 0);
   const pendingWithdrawCount = Number(stats?.pending_withdraw_count || 0);
+  const depositCount = Number(stats?.deposit_count || 0);
+  const withdrawCount = Number(stats?.withdraw_count || 0);
   const lastActivityAt = formatFaDateTime(stats?.last_activity_at || user?.created_at);
   const lastWinAt = formatFaDateTime(stats?.last_win_at);
+  const restrictedActions = Array.isArray(restriction?.actions) && restriction.actions.length
+    ? restriction.actions.join("، ")
+    : "بدون محدودیت";
   root.innerHTML = `
     <div class="history-item admin-user-profile-card">
       <div class="admin-user-profile-head">
@@ -5227,8 +5615,22 @@ function renderAdminUsersProfile(payload) {
         <div class="admin-user-kpi"><div class="k">برداشت در انتظار</div><div class="v">${safeText(String(pendingWithdrawCount))}</div></div>
         <div class="admin-user-kpi"><div class="k">آخرین فعالیت</div><div class="v">${safeText(lastActivityAt)}</div></div>
       </div>
+      <div class="admin-user-behavior-grid mt-12">
+        <div>
+          <span>رفتار مالی</span>
+          <strong>${safeText(String(depositCount))} واریز | ${safeText(String(withdrawCount))} برداشت</strong>
+        </div>
+        <div>
+          <span>محدودیت فعال</span>
+          <strong>${safeText(restrictedActions)}</strong>
+        </div>
+        <div>
+          <span>آخرین برد</span>
+          <strong>${safeText(lastWinAt)}</strong>
+        </div>
+      </div>
       <div class="history-meta mt-12">
-        آخرین برد: ${safeText(lastWinAt)}
+        برای بررسی دقیق‌تر، تاریخچه مالی یا بازی را باز کنید. هر عملیات مدیریتی در Audit ثبت می‌شود.
       </div>
       <div class="admin-action-block mt-12">
         <div class="admin-action-block-title">گزارش‌های کاربر</div>
@@ -7024,12 +7426,18 @@ async function boot() {
   wireAdminAccordion();
   wireAdminNotify();
   wireCardsPullToRefresh();
+  loadNotificationReadIds();
+  updateNotificationBadge();
   updateBuyActionState({ statusKey: "", myCardsCount: 0 });
   renderLiveLink({});
   const copyBtn = getEl("copyDepositCardBtn");
   if (copyBtn) copyBtn.disabled = true;
 
   bind("soundBtn", "click", toggleSound);
+  bind("notificationsBtn", "click", openNotificationCenter);
+  bind("notificationCloseBtn", "click", closeNotificationCenter);
+  bind("notificationMarkAllBtn", "click", markAllNotificationsRead);
+  bind("notificationRefreshBtn", "click", () => refreshNotifications({ silent: false }).catch((e) => showToast(localizeApiError(e?.message || e), "error")));
   bind("refreshGamesBtn", "click", () => runManualRefresh("refreshGamesBtn", () => refreshGames()).catch(() => {}));
   bind("refreshCardsBtn", "click", () => runManualRefresh("refreshCardsBtn", () => refreshCards({ silent: false })).catch(() => {}));
   bind("refreshWalletBtn", "click", () => runManualRefresh("refreshWalletBtn", () => refreshWallet()).catch(() => {}));
@@ -7098,10 +7506,17 @@ async function boot() {
     });
   }
   bind("depositReceiptCloseBtn", "click", closeDepositReceiptModal);
+  bind("receiptModalCloseBtn", "click", closeReceiptModal);
   const depositReceiptModal = getEl("depositReceiptModal");
   if (depositReceiptModal) {
     depositReceiptModal.addEventListener("click", (e) => {
       if (e.target === depositReceiptModal) closeDepositReceiptModal();
+    });
+  }
+  const receiptModal = getEl("receiptModal");
+  if (receiptModal) {
+    receiptModal.addEventListener("click", (e) => {
+      if (e.target === receiptModal) closeReceiptModal();
     });
   }
 

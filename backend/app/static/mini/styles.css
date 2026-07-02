@@ -5806,6 +5806,7 @@ html[data-theme="light"] .admin-winner-dialog {
   display: grid;
   gap: 12px;
   overflow: auto;
+  min-height: 0;
   padding-inline-end: 2px;
 }
 
@@ -5905,6 +5906,425 @@ html[data-theme="light"] .admin-winner-row {
 
 .admin-winner-card-panel .mini-card-grid {
   margin-top: 2px;
+}
+
+.notification-toggle-btn {
+  position: relative;
+  min-width: 94px;
+}
+
+.notification-badge {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  margin-inline-start: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  place-items: center;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.live-game-bar {
+  position: sticky;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  z-index: 8;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--glass-border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--glass) 88%, rgba(45, 212, 191, 0.12));
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(16px);
+}
+
+html[data-theme="light"] .live-game-bar {
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 28px rgba(30, 64, 175, 0.12);
+}
+
+.live-game-bar-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 10px;
+  align-items: center;
+  min-width: 0;
+  color: var(--text);
+}
+
+.live-game-bar-main strong,
+.live-game-bar-main b {
+  color: var(--text);
+}
+
+.live-game-bar-main span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.live-game-bar-status {
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #fff !important;
+  background: #2563eb;
+  font-weight: 800;
+}
+
+.live-game-bar-status.running {
+  background: #dc2626;
+}
+
+.live-game-bar-status.lobby {
+  background: #0f766e;
+}
+
+.live-game-bar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tx-chip-side {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  min-width: fit-content;
+}
+
+.notification-center {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(2, 6, 23, 0.48);
+}
+
+.notification-center.open {
+  display: flex;
+}
+
+.notification-panel {
+  width: min(560px, 100%);
+  max-height: min(84vh, 720px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  padding: 16px;
+}
+
+html[data-theme="light"] .notification-panel {
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.notification-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.notification-head h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.1rem;
+}
+
+.notification-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.notification-actions,
+.receipt-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.notification-list {
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+  min-height: 0;
+  padding-inline-end: 2px;
+}
+
+.notification-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--glass) 78%, transparent);
+}
+
+html[data-theme="light"] .notification-item {
+  background: rgba(247, 250, 255, 0.94);
+}
+
+.notification-item.is-unread {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--glass-border));
+}
+
+.notification-item-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.notification-item-main strong {
+  color: var(--text);
+}
+
+.notification-item-main p,
+.notification-item-main small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.notification-status {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #fff;
+  background: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.notification-status.success {
+  background: #059669;
+}
+
+.notification-status.pending {
+  background: #d97706;
+}
+
+.notification-status.danger,
+.notification-status.error {
+  background: #dc2626;
+}
+
+.notification-item-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.receipt-modal-card {
+  width: min(520px, calc(100vw - 24px));
+  max-height: min(86vh, 720px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  padding: 16px;
+}
+
+html[data-theme="light"] .receipt-modal-card {
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.receipt-modal-body {
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.receipt-hero {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.14), rgba(245, 158, 11, 0.14));
+}
+
+.receipt-seal {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #10b981;
+  color: #fff;
+  font-weight: 900;
+}
+
+.receipt-hero strong,
+.receipt-grid strong,
+.receipt-detail-row strong {
+  color: var(--text);
+}
+
+.receipt-hero span,
+.receipt-grid span,
+.receipt-detail-row span {
+  color: var(--muted);
+}
+
+.receipt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.receipt-grid > div,
+.receipt-detail-row {
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--glass) 70%, transparent);
+}
+
+html[data-theme="light"] .receipt-grid > div,
+html[data-theme="light"] .receipt-detail-row {
+  background: rgba(248, 250, 252, 0.94);
+}
+
+.receipt-grid span,
+.receipt-grid strong,
+.receipt-detail-row span,
+.receipt-detail-row strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.receipt-detail-list {
+  display: grid;
+  gap: 8px;
+}
+
+.receipt-detail-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.crypto-health-summary {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.crypto-health-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--glass) 72%, transparent);
+}
+
+html[data-theme="light"] .crypto-health-card {
+  background: rgba(248, 250, 252, 0.95);
+}
+
+.crypto-health-card.is-ok {
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.crypto-health-card.is-error,
+.crypto-health-card.is-off {
+  border-color: rgba(239, 68, 68, 0.42);
+}
+
+.crypto-health-card strong {
+  color: var(--text);
+}
+
+.crypto-health-card span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.crypto-health-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.admin-user-behavior-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-user-behavior-grid > div {
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--glass) 74%, transparent);
+}
+
+html[data-theme="light"] .admin-user-behavior-grid > div {
+  background: rgba(248, 250, 252, 0.94);
+}
+
+.admin-user-behavior-grid span,
+.admin-user-behavior-grid strong {
+  display: block;
+}
+
+.admin-user-behavior-grid span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.admin-user-behavior-grid strong {
+  color: var(--text);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .live-game-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .live-game-bar-actions,
+  .notification-actions,
+  .receipt-actions {
+    width: 100%;
+  }
+
+  .live-game-bar-actions .small-btn,
+  .notification-actions .small-btn,
+  .receipt-actions .small-btn {
+    flex: 1 1 0;
+  }
+
+  .notification-item {
+    grid-template-columns: 1fr;
+  }
+
+  .notification-item-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .receipt-grid,
+  .admin-user-behavior-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .receipt-detail-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 420px) {

@@ -374,6 +374,57 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+def _dt_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _receipt_tracking(prefix: str, value: int) -> str:
+    return f"DAV-{prefix}-{int(value):06d}"
+
+
+def _crypto_explorer_url(network: str, tx_hash: str | None) -> str | None:
+    tx = str(tx_hash or "").strip()
+    if not tx:
+        return None
+    from urllib.parse import quote
+
+    base = (
+        cfg.CRYPTO_TRON_EXPLORER_TX_BASE
+        if str(network or "").upper() == "TRON"
+        else cfg.CRYPTO_TON_EXPLORER_TX_BASE
+    )
+    return f"{base}/{quote(tx, safe='')}"
+
+
+def _mini_notification(
+    *,
+    key: str,
+    kind: str,
+    title: str,
+    body: str,
+    status: str,
+    created_at: Any,
+    severity: str = "info",
+    target_view: str = "wallet",
+    receipt_kind: str | None = None,
+    receipt_id: int | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": str(key),
+        "kind": str(kind),
+        "title": str(title),
+        "body": str(body),
+        "status": str(status),
+        "severity": str(severity),
+        "created_at": _dt_text(created_at),
+        "target_view": str(target_view),
+        "receipt_kind": receipt_kind,
+        "receipt_id": int(receipt_id) if receipt_id is not None else None,
+    }
+
+
 def _safe_user_count(values: Any) -> int:
     if not isinstance(values, list):
         return 0
@@ -2005,6 +2056,279 @@ def my_wallet_txs(
         )
         for tx in rows
     ]
+
+
+@router.get("/me/notifications")
+def mini_my_notifications(
+    limit: int = Query(default=40, ge=1, le=100),
+    user_id: int = Depends(get_mini_user_id),
+    db: Session = Depends(get_db),
+):
+    notifications: list[dict[str, Any]] = []
+    wallet = db.execute(select(Wallet).where(Wallet.user_id == int(user_id))).scalar_one_or_none()
+
+    if wallet:
+        tx_rows = db.execute(
+            select(WalletTx)
+            .where(WalletTx.wallet_id == int(wallet.id))
+            .where(WalletTx.reason.in_(["PRIZE_COL", "PRIZE_ROW", "ADJUST"]))
+            .order_by(WalletTx.id.desc())
+            .limit(int(limit))
+        ).scalars().all()
+        for tx in tx_rows:
+            reason = str(tx.reason)
+            if reason in ("PRIZE_COL", "PRIZE_ROW"):
+                notifications.append(
+                    _mini_notification(
+                        key=f"prize:{int(tx.id)}",
+                        kind="win",
+                        title="جایزه به کیف پول اضافه شد",
+                        body=f"{'برد ستونی(تورنا)' if reason == 'PRIZE_COL' else 'برد سطری(تمام)'} | مبلغ {int(tx.amount):,} تومان",
+                        status="DONE",
+                        severity="success",
+                        created_at=tx.created_at,
+                        target_view="cards",
+                        receipt_kind="prize",
+                        receipt_id=int(tx.id),
+                    )
+                )
+            elif reason == "ADJUST":
+                notifications.append(
+                    _mini_notification(
+                        key=f"admin-message:{int(tx.id)}",
+                        kind="admin_message",
+                        title="پیام مالی مدیریت",
+                        body=f"اصلاح کیف پول | مبلغ {int(tx.amount):,} تومان",
+                        status="DONE",
+                        severity="info",
+                        created_at=tx.created_at,
+                        target_view="wallet",
+                        receipt_kind="wallet_tx",
+                        receipt_id=int(tx.id),
+                    )
+                )
+
+    deposit_rows = db.execute(
+        select(DepositRequest)
+        .where(DepositRequest.user_id == int(user_id))
+        .order_by(DepositRequest.id.desc())
+        .limit(int(limit))
+    ).scalars().all()
+    for row in deposit_rows:
+        status = str(row.status)
+        severity = "success" if status == "APPROVED" else "danger" if status == "REJECTED" else "pending"
+        title = "واریز تایید شد" if status == "APPROVED" else "واریز رد شد" if status == "REJECTED" else "واریز در انتظار بررسی"
+        notifications.append(
+            _mini_notification(
+                key=f"deposit:{int(row.id)}:{status}",
+                kind="deposit",
+                title=title,
+                body=f"درخواست #{int(row.id)} | مبلغ {int(row.amount):,} تومان",
+                status=status,
+                severity=severity,
+                created_at=row.reviewed_at or row.created_at,
+                target_view="wallet",
+                receipt_kind="bank_deposit",
+                receipt_id=int(row.id),
+            )
+        )
+
+    withdraw_rows = db.execute(
+        select(WithdrawRequest)
+        .where(WithdrawRequest.user_id == int(user_id))
+        .order_by(WithdrawRequest.id.desc())
+        .limit(int(limit))
+    ).scalars().all()
+    for row in withdraw_rows:
+        status = str(row.status)
+        severity = "success" if status == "PAID" else "danger" if status == "REJECTED" else "pending"
+        title = "برداشت پرداخت شد" if status == "PAID" else "برداشت رد شد" if status == "REJECTED" else "برداشت در حال رسیدگی"
+        notifications.append(
+            _mini_notification(
+                key=f"withdraw:{int(row.id)}:{status}",
+                kind="withdraw",
+                title=title,
+                body=f"درخواست #{int(row.id)} | مبلغ {int(row.amount):,} تومان",
+                status=status,
+                severity=severity,
+                created_at=row.reviewed_at or row.created_at,
+                target_view="wallet",
+                receipt_kind="withdraw",
+                receipt_id=int(row.id),
+            )
+        )
+
+    crypto_rows = db.execute(
+        select(CryptoDepositRequest)
+        .where(CryptoDepositRequest.user_id == int(user_id))
+        .order_by(CryptoDepositRequest.id.desc())
+        .limit(int(limit))
+    ).scalars().all()
+    for row in crypto_rows:
+        status = str(row.status)
+        failed = status in ("EXPIRED", "REJECTED", "NEEDS_REVIEW")
+        severity = "success" if status == "CREDITED" else "danger" if failed else "pending"
+        title = "واریز رمزارز شارژ شد" if status == "CREDITED" else "واریز رمزارز نیازمند توجه است" if failed else "فاکتور رمزارز در جریان است"
+        body = f"فاکتور #{int(row.id)} | {int(row.amount_toman):,} تومان | {row.asset}/{row.network}"
+        reason = str(row.failure_reason or "").strip()
+        if reason:
+            body = f"{body} | {reason}"
+        notifications.append(
+            _mini_notification(
+                key=f"crypto:{int(row.id)}:{status}",
+                kind="crypto",
+                title=title,
+                body=body,
+                status=status,
+                severity=severity,
+                created_at=row.credited_at or row.confirmed_at or row.updated_at or row.created_at,
+                target_view="wallet",
+                receipt_kind="crypto_deposit",
+                receipt_id=int(row.id),
+            )
+        )
+
+    notifications.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return {"total": len(notifications), "items": notifications[: int(limit)]}
+
+
+@router.get("/me/receipts/{kind}/{item_id}")
+def mini_my_receipt(
+    kind: str,
+    item_id: int,
+    user_id: int = Depends(get_mini_user_id),
+    db: Session = Depends(get_db),
+):
+    normalized = str(kind or "").strip().lower().replace("-", "_")
+    if normalized in ("wallet_tx", "prize"):
+        wallet = db.execute(select(Wallet).where(Wallet.user_id == int(user_id))).scalar_one_or_none()
+        if not wallet:
+            raise HTTPException(status_code=404, detail="کیف پول پیدا نشد.")
+        tx = db.execute(
+            select(WalletTx).where(
+                WalletTx.id == int(item_id),
+                WalletTx.wallet_id == int(wallet.id),
+            )
+        ).scalar_one_or_none()
+        if not tx:
+            raise HTTPException(status_code=404, detail="رسید تراکنش پیدا نشد.")
+        if normalized == "prize" and str(tx.reason) not in ("PRIZE_COL", "PRIZE_ROW"):
+            raise HTTPException(status_code=404, detail="این تراکنش رسید جایزه نیست.")
+        title_map = {
+            "PRIZE_COL": "رسید جایزه ستونی(تورنا)",
+            "PRIZE_ROW": "رسید جایزه سطری(تمام)",
+            "DEPOSIT_MANUAL": "رسید شارژ کیف پول",
+            "DEPOSIT_GATEWAY": "رسید درگاه پرداخت",
+            "DEPOSIT_CRYPTO": "رسید واریز رمزارز",
+            "WITHDRAW": "رسید برداشت",
+            "BUY_CARDS": "رسید خرید کارت",
+            "ADJUST": "رسید اصلاح کیف پول",
+        }
+        return {
+            "kind": normalized,
+            "id": int(tx.id),
+            "title": title_map.get(str(tx.reason), "رسید تراکنش کیف پول"),
+            "status": "ثبت شده",
+            "amount": int(tx.amount),
+            "direction": str(tx.direction),
+            "tracking_code": _receipt_tracking("WTX", int(tx.id)),
+            "created_at": _dt_text(tx.created_at),
+            "completed_at": _dt_text(tx.created_at),
+            "items": [
+                {"label": "نوع تراکنش", "value": str(tx.reason)},
+                {"label": "شناسه مرجع", "value": f"{tx.ref_type or '-'} #{tx.ref_id or '-'}"},
+                {"label": "شناسه کیف پول", "value": str(wallet.id)},
+            ],
+        }
+
+    if normalized in ("bank_deposit", "deposit"):
+        row = db.execute(
+            select(DepositRequest).where(
+                DepositRequest.id == int(item_id),
+                DepositRequest.user_id == int(user_id),
+            )
+        ).scalar_one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="رسید واریز پیدا نشد.")
+        _destination_id, destination_title = _read_request_destination(db, request_id=int(row.id))
+        return {
+            "kind": "bank_deposit",
+            "id": int(row.id),
+            "title": "رسید واریز کارت بانکی",
+            "status": str(row.status),
+            "amount": int(row.amount),
+            "direction": "CREDIT",
+            "tracking_code": _receipt_tracking("DEP", int(row.id)),
+            "created_at": _dt_text(row.created_at),
+            "completed_at": _dt_text(row.reviewed_at),
+            "items": [
+                {"label": "کارت مقصد", "value": destination_title or "-"},
+                {"label": "شناسه تراکنش کیف پول", "value": str(row.wallet_tx_id or "-")},
+                {"label": "رسید آپلود شده", "value": "بله" if bool(row.receipt_path or row.receipt_file_id) else "خیر"},
+            ],
+        }
+
+    if normalized == "withdraw":
+        row = db.execute(
+            select(WithdrawRequest).where(
+                WithdrawRequest.id == int(item_id),
+                WithdrawRequest.user_id == int(user_id),
+            )
+        ).scalar_one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="رسید برداشت پیدا نشد.")
+        return {
+            "kind": "withdraw",
+            "id": int(row.id),
+            "title": "رسید برداشت از کیف پول",
+            "status": str(row.status),
+            "amount": int(row.amount),
+            "direction": "DEBIT",
+            "tracking_code": str(row.paid_tracking or "") or _receipt_tracking("WDR", int(row.id)),
+            "created_at": _dt_text(row.created_at),
+            "completed_at": _dt_text(row.reviewed_at),
+            "items": [
+                {"label": "نام صاحب حساب", "value": str(row.full_name or "-")},
+                {"label": "شماره کارت", "value": str(row.card_number or "-")},
+                {"label": "شناسه تراکنش کیف پول", "value": str(row.wallet_tx_id or "-")},
+            ],
+        }
+
+    if normalized == "crypto_deposit":
+        row = db.execute(
+            select(CryptoDepositRequest).where(
+                CryptoDepositRequest.id == int(item_id),
+                CryptoDepositRequest.user_id == int(user_id),
+            )
+        ).scalar_one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="رسید رمزارز پیدا نشد.")
+        return {
+            "kind": "crypto_deposit",
+            "id": int(row.id),
+            "title": "رسید واریز ارز دیجیتال",
+            "status": str(row.status),
+            "amount": int(row.amount_toman),
+            "direction": "CREDIT",
+            "tracking_code": (
+                str(row.public_id).upper()
+                if str(row.public_id).upper().startswith("DAV-")
+                else f"DAV-{str(row.public_id).upper()}"
+            ),
+            "created_at": _dt_text(row.created_at),
+            "completed_at": _dt_text(row.credited_at or row.confirmed_at),
+            "explorer_url": _crypto_explorer_url(str(row.network), row.tx_hash),
+            "items": [
+                {"label": "شبکه", "value": str(row.network)},
+                {"label": "ارز", "value": str(row.asset)},
+                {"label": "مبلغ رمزارز", "value": str(row.paid_amount_crypto or row.amount_crypto)},
+                {"label": "نرخ قفل‌شده", "value": str(row.rate_toman_per_asset)},
+                {"label": "تایید شبکه", "value": f"{int(row.confirmation_count or 0)} از {int(row.required_confirmations or 1)}"},
+                {"label": "هش تراکنش", "value": str(row.tx_hash or "-")},
+            ],
+        }
+
+    raise HTTPException(status_code=404, detail="نوع رسید پشتیبانی نمی‌شود.")
 
 
 @router.get("/crypto/options", response_model=CryptoOptionsOut)
