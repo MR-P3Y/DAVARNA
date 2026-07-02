@@ -32,11 +32,24 @@ class CryptoRateServiceTests(unittest.TestCase):
             rate = CryptoRateService._fetch_nobitex("USDT")
         self.assertEqual(rate, Decimal("164500"))
 
+    def test_tabdeal_uses_best_ask_in_toman(self):
+        with patch.object(
+            CryptoRateService,
+            "_http_get",
+            return_value={"asks": [["164500", "12.5"], ["164600", "9"]]},
+        ):
+            rate = CryptoRateService._fetch_tabdeal("USDT")
+        self.assertEqual(rate, Decimal("164500"))
+
     def test_fallback_provider_is_used(self):
         original_primary = cfg.CRYPTO_RATE_PROVIDER_PRIMARY
         original_fallback = cfg.CRYPTO_RATE_PROVIDER_FALLBACK
+        original_third = getattr(cfg, "CRYPTO_RATE_PROVIDER_THIRD", "tabdeal")
+        original_providers = list(getattr(cfg, "CRYPTO_RATE_PROVIDERS", []))
         cfg.CRYPTO_RATE_PROVIDER_PRIMARY = "nobitex"
         cfg.CRYPTO_RATE_PROVIDER_FALLBACK = "wallex"
+        cfg.CRYPTO_RATE_PROVIDER_THIRD = "tabdeal"
+        cfg.CRYPTO_RATE_PROVIDERS = ["nobitex", "wallex", "tabdeal"]
         try:
             with patch.object(
                 CryptoRateService,
@@ -47,6 +60,8 @@ class CryptoRateServiceTests(unittest.TestCase):
         finally:
             cfg.CRYPTO_RATE_PROVIDER_PRIMARY = original_primary
             cfg.CRYPTO_RATE_PROVIDER_FALLBACK = original_fallback
+            cfg.CRYPTO_RATE_PROVIDER_THIRD = original_third
+            cfg.CRYPTO_RATE_PROVIDERS = original_providers
         self.assertEqual(quote.provider, "wallex")
         self.assertEqual(quote.rate_toman, Decimal("164500"))
 

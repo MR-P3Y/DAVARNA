@@ -252,7 +252,6 @@ const ADMIN_AUDIT_ACTION_LABELS = {
   "crypto.wallet.connected": "اتصال کیف پول کریپتو",
   "crypto.payment.requested": "درخواست پرداخت کریپتو",
   "risk.buy.insufficient_balance": "تلاش خرید با موجودی ناکافی",
-  "winner.settlement.mark_paid": "ثبت پرداخت برنده",
 };
 
 const ACTIVE_GAME_STATUSES = new Set(["LOBBY", "RUNNING"]);
@@ -2558,7 +2557,6 @@ function handleMiniSocketFinance(payload) {
       refreshAdminRiskAlerts(),
       refreshAdminDeposits(),
       refreshAdminWithdraws(),
-      refreshAdminWinnerSettlements(),
     ]).catch(() => {});
   }
 }
@@ -6361,78 +6359,6 @@ async function refreshAdminOpsDashboard() {
   renderAdminOpsDashboard(out);
 }
 
-function winnerSettlementReasonLabel(reason) {
-  const key = String(reason || "").toUpperCase();
-  if (key === "PRIZE_ROW") return "برد سطری(تمام)";
-  if (key === "PRIZE_COL") return "برد ستونی(تورنا)";
-  return key || "-";
-}
-
-function renderAdminWinnerSettlements(payload) {
-  const root = getEl("adminWinnerSettlementsList");
-  if (!root) return;
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  if (!items.length) {
-    root.innerHTML = '<div class="empty">فعلاً برد پرداخت‌شده یا در انتظار ثبت وجود ندارد.</div>';
-    return;
-  }
-  root.innerHTML = items
-    .map((item) => {
-      const paid = String(item.settlement_status || "") === "PAID_RECORDED";
-      const gameId = Number(item.game_id || 0);
-      const cardId = Number(item.winner_card_id || 0);
-      return `
-        <div class="history-item admin-settlement-item ${paid ? "is-paid" : ""}">
-          <strong>برد بازی #${safeText(gameId || "-")} | ${safeText(winnerSettlementReasonLabel(item.reason))}</strong>
-          <div class="history-meta">
-            برنده: ${safeText(item.display_name || item.username || item.tg_user_id || "-")}<br />
-            مبلغ: ${safeText(toman(item.amount || 0))}<br />
-            کارت برنده: ${safeText(cardId || "-")}<br />
-            وضعیت دفتر کیف پول: ${item.ledger_status === "CREDITED" ? "شارژ شده" : safeText(item.ledger_status || "-")}<br />
-            وضعیت تسویه: ${paid ? "پرداخت ثبت شده" : "در انتظار ثبت پرداخت"}<br />
-            زمان: ${safeText(formatFaDateTime(item.created_at))}
-          </div>
-          <div class="admin-item-actions">
-            ${gameId && cardId ? `<button class="small-btn admin-settlement-card-btn" data-game-id="${safeText(gameId)}" data-card-id="${safeText(cardId)}" type="button">مشاهده کارت</button>` : ""}
-            ${paid ? '<span class="meta">ثبت شده</span>' : `<button class="small-btn primary admin-settlement-paid-btn" data-id="${safeText(item.wallet_tx_id)}" type="button">ثبت پرداخت</button>`}
-          </div>
-        </div>
-      `;
-    })
-    .join("");
-
-  root.querySelectorAll(".admin-settlement-card-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const gid = Number(btn.getAttribute("data-game-id") || "0");
-      const cid = Number(btn.getAttribute("data-card-id") || "0");
-      if (!gid || !cid) return;
-      openAdminWinnerCardModal(gid, cid).catch((e) => setAdminLocalError("adminActionHint", e));
-    });
-  });
-  root.querySelectorAll(".admin-settlement-paid-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = Number(btn.getAttribute("data-id") || "0");
-      if (!id) return;
-      adminMarkWinnerSettlementPaid(id).catch((e) => setAdminLocalError("adminActionHint", e));
-    });
-  });
-}
-
-async function refreshAdminWinnerSettlements() {
-  if (!state.admin.enabled) return;
-  const out = await apiFetch("/mini-api/admin/winner-settlements?limit=40");
-  renderAdminWinnerSettlements(out);
-}
-
-async function adminMarkWinnerSettlementPaid(walletTxId) {
-  const id = Number(walletTxId || 0);
-  if (!id) throw new Error("شناسه تراکنش جایزه نامعتبر است.");
-  setAdminLocalHint("adminActionHint", "در حال ثبت پرداخت برنده...");
-  await apiFetch(`/mini-api/admin/winner-settlements/${id}/mark-paid`, { method: "POST" });
-  setAdminLocalHint("adminActionHint", "پرداخت برنده در لاگ عملیاتی ثبت شد.", "success");
-  await Promise.allSettled([refreshAdminWinnerSettlements(), refreshAdminAuditLogs(), refreshAdminOpsDashboard()]);
-}
-
 function renderAdminAuditLogs(payload) {
   const root = getEl("adminAuditLogsList");
   if (!root) return;
@@ -6508,7 +6434,6 @@ async function refreshAdminPanel(options = {}) {
     refreshAdminOpsDashboard(),
     refreshAdminCreateOptions(),
     refreshAdminGames(),
-    refreshAdminWinnerSettlements(),
     refreshAdminRiskAlerts(),
     refreshAdminAuditLogs(),
     refreshAdminDeposits(),

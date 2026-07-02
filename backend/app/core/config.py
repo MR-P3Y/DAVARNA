@@ -312,6 +312,19 @@ CRYPTO_ADMIN_REVIEW_TOMAN_THRESHOLD = _safe_positive_int(
 )
 CRYPTO_RATE_PROVIDER_PRIMARY = (os.getenv("CRYPTO_RATE_PROVIDER_PRIMARY", "nobitex") or "nobitex").strip().lower()
 CRYPTO_RATE_PROVIDER_FALLBACK = (os.getenv("CRYPTO_RATE_PROVIDER_FALLBACK", "wallex") or "wallex").strip().lower()
+CRYPTO_RATE_PROVIDER_THIRD = (os.getenv("CRYPTO_RATE_PROVIDER_THIRD", "tabdeal") or "tabdeal").strip().lower()
+
+_crypto_rate_providers_raw = os.getenv("CRYPTO_RATE_PROVIDERS", "").strip()
+CRYPTO_RATE_PROVIDERS = _parse_csv_list(_crypto_rate_providers_raw) if _crypto_rate_providers_raw else [
+    CRYPTO_RATE_PROVIDER_PRIMARY,
+    CRYPTO_RATE_PROVIDER_FALLBACK,
+    CRYPTO_RATE_PROVIDER_THIRD,
+]
+CRYPTO_RATE_PROVIDERS = [
+    provider.strip().lower()
+    for provider in dict.fromkeys(CRYPTO_RATE_PROVIDERS)
+    if str(provider or "").strip()
+]
 CRYPTO_RATE_FAIL_ALLOW_STALE_SEC = _safe_nonnegative_int("CRYPTO_RATE_FAIL_ALLOW_STALE_SEC", 0)
 CRYPTO_RATE_MAX_DEVIATION_PERCENT = _safe_decimal("CRYPTO_RATE_MAX_DEVIATION_PERCENT", "8")
 CRYPTO_RATE_BUFFER_PERCENT = _safe_decimal("CRYPTO_RATE_BUFFER_PERCENT", "0")
@@ -352,6 +365,9 @@ CRYPTO_NOBITEX_BASE_URL = (
 ).strip().rstrip("/")
 CRYPTO_WALLEX_BASE_URL = (
     os.getenv("CRYPTO_WALLEX_BASE_URL", "https://api.wallex.ir") or "https://api.wallex.ir"
+).strip().rstrip("/")
+CRYPTO_TABDEAL_BASE_URL = (
+    os.getenv("CRYPTO_TABDEAL_BASE_URL", "https://api1.tabdeal.org") or "https://api1.tabdeal.org"
 ).strip().rstrip("/")
 CRYPTO_BINANCE_BASE_URL = (
     os.getenv("CRYPTO_BINANCE_BASE_URL", "https://data-api.binance.vision")

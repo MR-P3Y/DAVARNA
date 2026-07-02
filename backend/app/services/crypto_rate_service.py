@@ -34,17 +34,29 @@ class CryptoRateService:
     _last_good: dict[str, CryptoRateQuote] = {}
     _lock = threading.Lock()
 
+    @staticmethod
+    def configured_providers() -> list[str]:
+        providers = getattr(cfg, "CRYPTO_RATE_PROVIDERS", None)
+        if not providers:
+            providers = [
+                cfg.CRYPTO_RATE_PROVIDER_PRIMARY,
+                cfg.CRYPTO_RATE_PROVIDER_FALLBACK,
+                getattr(cfg, "CRYPTO_RATE_PROVIDER_THIRD", ""),
+            ]
+        out: list[str] = []
+        for raw in providers:
+            name = str(raw or "").strip().lower()
+            if name and name not in out:
+                out.append(name)
+        return out
+
     @classmethod
     def get_live_quote(cls, asset: str) -> CryptoRateQuote:
         normalized_asset = str(asset or "").strip().upper()
         if normalized_asset not in ("USDT", "TON"):
             raise CryptoRateUnavailable("ارز درخواستی برای نرخ‌گیری پشتیبانی نمی‌شود.")
 
-        providers: list[str] = []
-        for provider in (cfg.CRYPTO_RATE_PROVIDER_PRIMARY, cfg.CRYPTO_RATE_PROVIDER_FALLBACK):
-            name = str(provider or "").strip().lower()
-            if name and name not in providers:
-                providers.append(name)
+        providers = cls.configured_providers()
 
         errors: list[str] = []
         for provider in providers:
@@ -88,6 +100,8 @@ class CryptoRateService:
             rate = cls._fetch_nobitex(asset)
         elif provider == "wallex":
             rate = cls._fetch_wallex(asset)
+        elif provider == "tabdeal":
+            rate = cls._fetch_tabdeal(asset)
         else:
             raise CryptoRateUnavailable(f"rate provider is not supported: {provider}")
         if rate <= 0:
@@ -139,6 +153,21 @@ class CryptoRateService:
             raise CryptoRateUnavailable("wallex ask price is invalid")
 
     @classmethod
+    def _fetch_tabdeal(cls, asset: str) -> Decimal:
+        symbol = {"USDT": "USDTIRT", "TON": "TONIRT"}[asset]
+        data = cls._http_get(
+            f"{cfg.CRYPTO_TABDEAL_BASE_URL}/r/api/v1/depth",
+            params={"symbol": symbol, "limit": 1},
+        )
+        asks = data.get("asks")
+        if not isinstance(asks, list) or not asks:
+            raise CryptoRateUnavailable("tabdeal order book has no asks")
+        try:
+            return Decimal(str(asks[0][0]))
+        except (InvalidOperation, IndexError, TypeError):
+            raise CryptoRateUnavailable("tabdeal ask price is invalid")
+
+    @classmethod
     def _fetch_ton_cross(cls, providers: list[str] | None = None) -> CryptoRateQuote:
         data = cls._http_get(
             f"{cfg.CRYPTO_BINANCE_BASE_URL}/api/v3/depth",
@@ -154,10 +183,7 @@ class CryptoRateService:
         if ton_usdt <= 0:
             raise CryptoRateUnavailable("binance TONUSDT ask price is not positive")
 
-        provider_names = providers or [
-            str(cfg.CRYPTO_RATE_PROVIDER_PRIMARY or "").strip().lower(),
-            str(cfg.CRYPTO_RATE_PROVIDER_FALLBACK or "").strip().lower(),
-        ]
+        provider_names = providers or cls.configured_providers()
         errors: list[str] = []
         for provider in dict.fromkeys(name for name in provider_names if name):
             try:

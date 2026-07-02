@@ -4909,10 +4909,6 @@ html[data-theme="light"] .live-main-pro .last-number-pop {
   min-height: 36px;
 }
 
-.admin-settlement-item.is-paid {
-  border-color: rgba(126, 245, 188, 0.24);
-}
-
 .admin-risk-item {
   border-inline-start: 4px solid rgba(120, 167, 255, 0.45);
 }
@@ -4938,8 +4934,7 @@ html[data-theme="light"] .live-main-pro .last-number-pop {
 }
 
 .admin-audit-item .history-meta,
-.admin-risk-item .history-meta,
-.admin-settlement-item .history-meta {
+.admin-risk-item .history-meta {
   line-height: 1.95;
 }
 

@@ -127,7 +127,6 @@ DEPOSIT_REQUEST_DESTINATION_KEY_PREFIX = "deposit_request_destination:"
 WITHDRAW_REQUEST_SOURCE_KEY_PREFIX = "withdraw_request_source:"
 WITHDRAW_PAID_PROOF_KEY_PREFIX = "withdraw_paid_proof:"
 GAME_LIVE_LINK_KEY_PREFIX = "game_live_link:"
-WINNER_SETTLEMENT_PAID_KEY_PREFIX = "winner_settlement_paid:"
 
 
 def _clean_numeric(value: object) -> str:
@@ -2893,47 +2892,6 @@ def _mini_admin_user_label(user: User | None) -> str:
     return name or f"کاربر {int(user.tg_user_id)}"
 
 
-def _winner_settlement_key(wallet_tx_id: int) -> str:
-    return f"{WINNER_SETTLEMENT_PAID_KEY_PREFIX}{int(wallet_tx_id)}"
-
-
-def _mini_winner_card_id_for_tx(db: Session, *, game_id: int, user_id: int, reason: str) -> int | None:
-    kind = "PRIZE_ROW" if str(reason).upper() == "PRIZE_ROW" else "PRIZE_COL"
-    rows = (
-        db.execute(
-            select(GameEvent.payload_json)
-            .where(GameEvent.game_id == int(game_id), GameEvent.kind == kind)
-            .order_by(GameEvent.id.desc())
-            .limit(20)
-        )
-        .scalars()
-        .all()
-    )
-    for payload in rows:
-        if not isinstance(payload, dict):
-            continue
-        winner_users = payload.get("winner_users")
-        if isinstance(winner_users, list):
-            for item in winner_users:
-                if not isinstance(item, dict):
-                    continue
-                if _safe_int(item.get("user_id"), 0) == int(user_id):
-                    card_id = _safe_int(item.get("card_id"), 0)
-                    if card_id > 0:
-                        return int(card_id)
-        user_ids = payload.get("winner_user_ids")
-        card_ids = payload.get("winner_card_ids")
-        if isinstance(user_ids, list) and isinstance(card_ids, list):
-            for idx, raw_uid in enumerate(user_ids):
-                if _safe_int(raw_uid, 0) != int(user_id):
-                    continue
-                if idx < len(card_ids):
-                    card_id = _safe_int(card_ids[idx], 0)
-                    if card_id > 0:
-                        return int(card_id)
-    return None
-
-
 def _mini_system_health(db: Session) -> dict[str, Any]:
     services: list[dict[str, Any]] = [
         {"key": "backend", "title": "Backend", "ok": True, "status": "OK", "detail": "API فعال است."}
@@ -3022,100 +2980,6 @@ def mini_admin_ops_dashboard(
         "system": _mini_system_health(db),
         "server_time": datetime.utcnow().isoformat(timespec="seconds"),
     }
-
-
-@router.get("/admin/winner-settlements")
-def mini_admin_winner_settlements(
-    limit: int = Query(default=30, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
-    db: Session = Depends(get_db),
-):
-    _ = ident
-    query = (
-        select(WalletTx, Wallet, User)
-        .join(Wallet, Wallet.id == WalletTx.wallet_id)
-        .join(User, User.id == Wallet.user_id)
-        .where(WalletTx.reason.in_(["PRIZE_COL", "PRIZE_ROW"]))
-        .order_by(WalletTx.id.desc())
-    )
-    total = db.execute(
-        select(func.count()).select_from(
-            select(WalletTx.id)
-            .where(WalletTx.reason.in_(["PRIZE_COL", "PRIZE_ROW"]))
-            .subquery()
-        )
-    ).scalar_one()
-    rows = db.execute(query.limit(int(limit)).offset(int(offset))).all()
-    items: list[dict[str, Any]] = []
-    for tx, wallet, user in rows:
-        game_id = int(tx.ref_id) if tx.ref_id is not None else None
-        ack = _setting_get_json(db, _winner_settlement_key(int(tx.id)))
-        card_id = (
-            _mini_winner_card_id_for_tx(db, game_id=int(game_id), user_id=int(wallet.user_id), reason=str(tx.reason))
-            if game_id is not None
-            else None
-        )
-        items.append(
-            {
-                "wallet_tx_id": int(tx.id),
-                "game_id": game_id,
-                "user_id": int(wallet.user_id),
-                "tg_user_id": int(user.tg_user_id),
-                "username": str(user.username) if user.username else None,
-                "display_name": _mini_admin_user_label(user),
-                "amount": int(tx.amount),
-                "reason": str(tx.reason),
-                "winner_card_id": int(card_id) if card_id is not None else None,
-                "ledger_status": "CREDITED",
-                "settlement_status": "PAID_RECORDED" if isinstance(ack, dict) else "PENDING_RECORD",
-                "paid_record": ack if isinstance(ack, dict) else None,
-                "created_at": str(tx.created_at) if tx.created_at else None,
-            }
-        )
-    return {"total": int(total or 0), "limit": int(limit), "offset": int(offset), "items": items}
-
-
-@router.post("/admin/winner-settlements/{wallet_tx_id}/mark-paid")
-def mini_admin_mark_winner_settlement_paid(
-    wallet_tx_id: int,
-    request: Request,
-    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
-    db: Session = Depends(get_db),
-):
-    enforce_write_rate_limit(int(ident.user_id))
-    row = db.execute(
-        select(WalletTx, Wallet, User)
-        .join(Wallet, Wallet.id == WalletTx.wallet_id)
-        .join(User, User.id == Wallet.user_id)
-        .where(WalletTx.id == int(wallet_tx_id), WalletTx.reason.in_(["PRIZE_COL", "PRIZE_ROW"]))
-    ).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="تراکنش جایزه پیدا نشد.")
-    tx, wallet, user = row
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    payload = {
-        "wallet_tx_id": int(tx.id),
-        "game_id": int(tx.ref_id) if tx.ref_id is not None else None,
-        "user_id": int(wallet.user_id),
-        "tg_user_id": int(user.tg_user_id),
-        "amount": int(tx.amount),
-        "reason": str(tx.reason),
-        "paid_recorded_by": int(ident.user_id),
-        "paid_recorded_at": now,
-    }
-    _setting_set_json(db, _winner_settlement_key(int(tx.id)), payload)
-    AdminAuditService.record(
-        db,
-        admin=_mini_to_admin_identity(ident),
-        action="winner.settlement.mark_paid",
-        target_type="wallet_tx",
-        target_id=int(tx.id),
-        request=request,
-        details=payload,
-    )
-    db.commit()
-    return {"ok": True, "item": payload}
 
 
 @router.get("/admin/audit/logs")

@@ -23,11 +23,7 @@ class CryptoHealthService:
 
         rate_checks: list[dict[str, Any]] = []
         asset_healthy: dict[str, bool] = {asset: False for asset in assets}
-        providers: list[str] = []
-        for raw in (cfg.CRYPTO_RATE_PROVIDER_PRIMARY, cfg.CRYPTO_RATE_PROVIDER_FALLBACK):
-            provider = str(raw or "").strip().lower()
-            if provider and provider not in providers:
-                providers.append(provider)
+        providers = CryptoRateService.configured_providers()
 
         for asset in assets:
             for provider in providers:
