@@ -163,6 +163,24 @@ def _ensure_manage_target(admin: AdminIdentity, target_roles: list[str]) -> None
         raise HTTPException(status_code=403, detail="cannot manage admin user")
 
 
+def _require_user_admin(admin: AdminIdentity) -> None:
+    if admin.has_any_role("ADMIN", "SUPER_ADMIN"):
+        return
+    raise HTTPException(status_code=403, detail="user admin role required")
+
+
+def _require_finance_admin(admin: AdminIdentity) -> None:
+    if admin.has_any_role("ADMIN", "SUPER_ADMIN", "FINANCE_ADMIN"):
+        return
+    raise HTTPException(status_code=403, detail="finance admin role required")
+
+
+def _require_finance_or_game_admin(admin: AdminIdentity) -> None:
+    if admin.has_any_role("ADMIN", "SUPER_ADMIN", "FINANCE_ADMIN", "GAME_OPERATOR"):
+        return
+    raise HTTPException(status_code=403, detail="admin role required")
+
+
 def _load_restrictions(db: Session) -> dict[str, Any]:
     raw = _setting_get_json(db, USER_RESTRICTIONS_KEY)
     return dict(raw) if isinstance(raw, dict) else {}
@@ -336,9 +354,10 @@ def admin_user_search(
     deposit_id: int | None = Query(default=None),
     withdraw_id: int | None = Query(default=None),
     limit: int = Query(default=30, ge=1, le=200),
-    _: AdminIdentity = Depends(require_admin_any),
+    admin: AdminIdentity = Depends(require_admin_any),
     db: Session = Depends(get_db),
 ):
+    _require_finance_or_game_admin(admin)
     if all(v is None for v in [tg_user_id, username, game_id, deposit_id, withdraw_id]):
         raise HTTPException(status_code=400, detail="at least one search filter is required")
 
@@ -414,9 +433,10 @@ def admin_user_search(
 @router.get("/{tg_user_id}/profile")
 def admin_user_profile(
     tg_user_id: int,
-    _: AdminIdentity = Depends(require_admin_any),
+    admin: AdminIdentity = Depends(require_admin_any),
     db: Session = Depends(get_db),
 ):
+    _require_finance_or_game_admin(admin)
     user = _get_user_by_tg_or_404(db, int(tg_user_id))
     roles = _roles_for_user(db, int(user.id))
     wallet = db.execute(select(Wallet).where(Wallet.user_id == int(user.id))).scalar_one_or_none()
@@ -536,9 +556,10 @@ def admin_user_profile(
 def admin_user_financial_history(
     tg_user_id: int,
     limit: int = Query(default=50, ge=1, le=200),
-    _: AdminIdentity = Depends(require_admin_any),
+    admin: AdminIdentity = Depends(require_admin_any),
     db: Session = Depends(get_db),
 ):
+    _require_finance_admin(admin)
     user = _get_user_by_tg_or_404(db, int(tg_user_id))
     wallet = db.execute(select(Wallet).where(Wallet.user_id == int(user.id))).scalar_one_or_none()
 
@@ -640,9 +661,10 @@ def admin_user_financial_history(
 def admin_user_games_history(
     tg_user_id: int,
     limit: int = Query(default=30, ge=1, le=200),
-    _: AdminIdentity = Depends(require_admin_any),
+    admin: AdminIdentity = Depends(require_admin_any),
     db: Session = Depends(get_db),
 ):
+    _require_finance_or_game_admin(admin)
     user = _get_user_by_tg_or_404(db, int(tg_user_id))
     wallet = db.execute(select(Wallet).where(Wallet.user_id == int(user.id))).scalar_one_or_none()
 
@@ -775,6 +797,7 @@ def admin_user_restrict(
     admin: AdminIdentity = Depends(require_admin_any),
     db: Session = Depends(get_db),
 ):
+    _require_user_admin(admin)
     user = _get_user_by_tg_or_404(db, int(tg_user_id))
     roles = _roles_for_user(db, int(user.id))
     _ensure_manage_target(admin, roles)
@@ -834,6 +857,7 @@ def admin_user_unrestrict(
     admin: AdminIdentity = Depends(require_admin_any),
     db: Session = Depends(get_db),
 ):
+    _require_user_admin(admin)
     user = _get_user_by_tg_or_404(db, int(tg_user_id))
     roles = _roles_for_user(db, int(user.id))
     _ensure_manage_target(admin, roles)
@@ -882,6 +906,7 @@ def admin_user_wallet_adjust(
     admin: AdminIdentity = Depends(require_admin_any),
     db: Session = Depends(get_db),
 ):
+    _require_finance_admin(admin)
     user = _get_user_by_tg_or_404(db, int(tg_user_id))
     roles = _roles_for_user(db, int(user.id))
     _ensure_manage_target(admin, roles)
@@ -992,9 +1017,10 @@ def admin_user_wallet_adjust(
 def admin_user_notify(
     tg_user_id: int,
     payload: NotifyIn,
-    _: AdminIdentity = Depends(require_admin_any),
+    admin: AdminIdentity = Depends(require_admin_any),
     db: Session = Depends(get_db),
 ):
+    _require_user_admin(admin)
     user = _get_user_by_tg_or_404(db, int(tg_user_id))
     result = _telegram_send_private_message(
         tg_user_id=int(user.tg_user_id),
@@ -1011,9 +1037,10 @@ def admin_user_notify(
 def admin_user_compose_message(
     tg_user_id: int,
     payload: ComposeIn,
-    _: AdminIdentity = Depends(require_admin_any),
+    admin: AdminIdentity = Depends(require_admin_any),
     db: Session = Depends(get_db),
 ):
+    _require_finance_or_game_admin(admin)
     user = _get_user_by_tg_or_404(db, int(tg_user_id))
     text = _compose_message_text(
         user=user,

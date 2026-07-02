@@ -23,6 +23,17 @@ def super_admin_cancel_kb() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def super_admin_role_select_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🎮 اپراتور بازی", callback_data="super:admin:add:role:GAME_OPERATOR")
+    kb.button(text="💰 ادمین مالی", callback_data="super:admin:add:role:FINANCE_ADMIN")
+    kb.button(text="🛠 ادمین کامل", callback_data="super:admin:add:role:ADMIN")
+    kb.button(text="👑 سوپرادمین", callback_data="super:admin:add:role:SUPER_ADMIN")
+    kb.button(text="❌ لغو", callback_data="super:admin:panel")
+    kb.adjust(1, 1, 1, 1, 1)
+    return kb.as_markup()
+
+
 def super_admin_admins_list_kb(items: list[dict], *, mode: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     normalized_mode = "remove" if str(mode).lower() == "remove" else "list"

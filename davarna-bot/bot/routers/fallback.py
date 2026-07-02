@@ -10,7 +10,14 @@ log = logging.getLogger("bot.fallback")
 
 
 @router.message(F.chat.type == "private")
-async def any_message(m: Message, is_admin: bool = False, is_super_admin: bool = False):
+async def any_message(
+    m: Message,
+    is_admin: bool = False,
+    is_super_admin: bool = False,
+    is_game_admin: bool = False,
+    is_finance_admin: bool = False,
+    is_user_admin: bool = False,
+):
     # هر متنی غیر از /start اینجا میاد
     await m.answer(
         panel(
@@ -18,7 +25,13 @@ async def any_message(m: Message, is_admin: bool = False, is_super_admin: bool =
             "برای ادامه بازی از دکمه‌های منو استفاده کن 👇\n"
             "همه بخش‌ها آماده‌ست؛ فقط انتخاب کن و برو جلو 🎮",
         ),
-        reply_markup=main_menu_kb(is_admin=is_admin, is_super_admin=is_super_admin),
+        reply_markup=main_menu_kb(
+            is_admin=is_admin,
+            is_super_admin=is_super_admin,
+            is_game_admin=is_game_admin,
+            is_finance_admin=is_finance_admin,
+            is_user_admin=is_user_admin,
+        ),
         parse_mode="HTML",
     )
 

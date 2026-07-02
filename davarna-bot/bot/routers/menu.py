@@ -15,6 +15,9 @@ async def back_to_menu(
     state: FSMContext,
     is_admin: bool = False,
     is_super_admin: bool = False,
+    is_game_admin: bool = False,
+    is_finance_admin: bool = False,
+    is_user_admin: bool = False,
 ):
     await state.clear()
     text = panel(
@@ -26,7 +29,13 @@ async def back_to_menu(
     await safe_edit_or_send(
         cq.message,
         text,
-        reply_markup=main_menu_kb(is_admin=is_admin, is_super_admin=is_super_admin),
+        reply_markup=main_menu_kb(
+            is_admin=is_admin,
+            is_super_admin=is_super_admin,
+            is_game_admin=is_game_admin,
+            is_finance_admin=is_finance_admin,
+            is_user_admin=is_user_admin,
+        ),
         parse_mode="HTML",
     )
     await cq.answer()

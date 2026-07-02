@@ -369,6 +369,9 @@ CRYPTO_WALLEX_BASE_URL = (
 CRYPTO_TABDEAL_BASE_URL = (
     os.getenv("CRYPTO_TABDEAL_BASE_URL", "https://api1.tabdeal.org") or "https://api1.tabdeal.org"
 ).strip().rstrip("/")
+CRYPTO_COINGECKO_BASE_URL = (
+    os.getenv("CRYPTO_COINGECKO_BASE_URL", "https://api.coingecko.com") or "https://api.coingecko.com"
+).strip().rstrip("/")
 CRYPTO_BINANCE_BASE_URL = (
     os.getenv("CRYPTO_BINANCE_BASE_URL", "https://data-api.binance.vision")
     or "https://data-api.binance.vision"

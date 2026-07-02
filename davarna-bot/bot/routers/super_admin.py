@@ -18,6 +18,7 @@ from bot.keyboards.super_admin import (
     super_admin_bank_deposit_settings_kb,
     super_admin_crypto_settings_kb,
     super_admin_remove_confirm_kb,
+    super_admin_role_select_kb,
 )
 from bot.services.admin_acl import (
     get_admin_label,
@@ -25,6 +26,7 @@ from bot.services.admin_acl import (
     revoke_dynamic_admin,
     set_admin_label,
     sync_dynamic_admin_ids,
+    sync_dynamic_admin_roles,
 )
 from bot.services.api_client import ApiClient, ApiError
 from bot.services.telegram_safe import safe_edit_or_send
@@ -62,7 +64,18 @@ def _role_fa(role: str) -> str:
         return "سوپرادمین"
     if s == "ADMIN":
         return "ادمین"
+    if s == "GAME_OPERATOR":
+        return "اپراتور بازی"
+    if s == "FINANCE_ADMIN":
+        return "ادمین مالی"
     return s or "نامشخص"
+
+
+def _valid_admin_role(raw: str) -> str | None:
+    role = str(raw or "").strip().upper()
+    if role in {"GAME_OPERATOR", "FINANCE_ADMIN", "ADMIN", "SUPER_ADMIN"}:
+        return role
+    return None
 
 
 def _normalize_admin_items(raw_items: list[dict]) -> list[dict]:
@@ -230,6 +243,13 @@ async def _fetch_admin_items(api: ApiClient) -> list[dict]:
         raw_items = []
     items = _normalize_admin_items(raw_items)
     sync_dynamic_admin_ids({int(it.get("tg_user_id") or 0) for it in items})
+    sync_dynamic_admin_roles(
+        {
+            int(it.get("tg_user_id") or 0): [str(role) for role in (it.get("roles") or [])]
+            for it in items
+            if int(it.get("tg_user_id") or 0) > 0
+        }
+    )
     return items
 
 
@@ -483,15 +503,49 @@ async def super_admin_add_receive_tg_user_id(m: Message, state: FSMContext, is_s
         return
 
     await state.update_data(action="grant", tg_user_id=tg_user_id)
-    await state.set_state(SuperAdminManageSG.waiting_for_display_name)
+    await state.set_state(SuperAdminManageSG.waiting_for_role)
     await m.answer(
         panel(
+            "👑 سوپرادمین | انتخاب نقش",
+            "نقش کاربر را انتخاب کن.\n\n"
+            "🎮 اپراتور بازی: ساخت/شروع بازی و اعلام عدد\n"
+            "💰 ادمین مالی: واریز، برداشت، کریپتو و اصلاح کیف پول\n"
+            "🛠 ادمین کامل: عملیات بازی، مالی و کاربران\n"
+            "👑 سوپرادمین: مدیریت نقش‌ها و تنظیمات حساس",
+        ),
+        reply_markup=super_admin_role_select_kb(),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("super:admin:add:role:"))
+async def super_admin_add_pick_role(cq: CallbackQuery, state: FSMContext, is_super_admin: bool = False):
+    if not _require_super_admin(is_super_admin):
+        await cq.answer("فقط سوپرادمین دسترسی دارد.", show_alert=True)
+        return
+    role = _valid_admin_role((cq.data or "").split(":")[-1])
+    if not role:
+        await cq.answer("نقش نامعتبر است.", show_alert=True)
+        return
+    data = await state.get_data()
+    tg_user_id = int(data.get("tg_user_id") or 0)
+    if tg_user_id <= 0:
+        await state.clear()
+        await cq.answer("شناسه کاربر پیدا نشد. دوباره شروع کن.", show_alert=True)
+        return
+    await state.update_data(role=role)
+    await state.set_state(SuperAdminManageSG.waiting_for_display_name)
+    await safe_edit_or_send(
+        cq.message,
+        panel(
             "👑 سوپرادمین | نام ادمین",
+            f"نقش انتخاب‌شده: <b>{_role_fa(role)}</b>\n\n"
             "نام نمایشی ادمین را وارد کن.\n\nمثال: <code>پیمون - ادمین شیفت شب</code>",
         ),
         reply_markup=super_admin_cancel_kb(),
         parse_mode="HTML",
     )
+    await cq.answer()
 
 
 @router.message(SuperAdminManageSG.waiting_for_display_name)
@@ -519,14 +573,15 @@ async def super_admin_add_receive_name(m: Message, state: FSMContext, api: ApiCl
 
     data = await state.get_data()
     tg_user_id = int(data.get("tg_user_id") or 0)
+    role = _valid_admin_role(str(data.get("role") or "ADMIN")) or "ADMIN"
     if tg_user_id <= 0:
         await state.clear()
         await m.answer(panel("خطا", "شناسه ادمین در حافظه پیدا نشد. دوباره تلاش کن."), parse_mode="HTML")
         return
 
     try:
-        await api.super_admin_grant_admin(tg_user_id=tg_user_id, role="ADMIN")
-        grant_dynamic_admin(tg_user_id)
+        await api.super_admin_grant_admin(tg_user_id=tg_user_id, role=role)
+        grant_dynamic_admin(tg_user_id, roles={role})
         set_admin_label(tg_user_id, display_name)
     except ApiError as e:
         await m.answer(
@@ -540,7 +595,7 @@ async def super_admin_add_receive_name(m: Message, state: FSMContext, api: ApiCl
     await m.answer(
         panel(
             "👑 سوپرادمین",
-            f"✅ ادمین جدید ثبت شد 🎉\n\nنام: <b>{display_name}</b>",
+            f"✅ نقش جدید ثبت شد 🎉\n\nنام: <b>{display_name}</b>\nنقش: <b>{_role_fa(role)}</b>",
         ),
         parse_mode="HTML",
     )

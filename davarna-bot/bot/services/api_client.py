@@ -754,6 +754,34 @@ class ApiClient:
         )
         return data if isinstance(data, dict) else {}
 
+    async def admin_ops_dashboard(self) -> dict:
+        data = await self._request(
+            "GET",
+            "/bot/admin/ops-dashboard",
+            headers=self.admin_headers(),
+            timeout_sec=20.0,
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def admin_audit_logs(self, *, limit: int = 30, offset: int = 0) -> dict:
+        data = await self._request(
+            "GET",
+            "/bot/admin/audit/logs",
+            params={"limit": int(limit), "offset": int(offset)},
+            headers=self.admin_headers(),
+            timeout_sec=20.0,
+        )
+        return data if isinstance(data, dict) else {"items": [], "total": 0}
+
+    async def admin_risk_alerts(self) -> dict:
+        data = await self._request(
+            "GET",
+            "/bot/admin/risk-alerts",
+            headers=self.admin_headers(),
+            timeout_sec=30.0,
+        )
+        return data if isinstance(data, dict) else {"items": [], "total": 0}
+
     async def bot_list_games(
         self,
         tg_user_id: int,

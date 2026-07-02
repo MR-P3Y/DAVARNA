@@ -29,10 +29,32 @@ class AdminScope(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
 
 class AdminIdentity:
-    def __init__(self, scope: AdminScope, token: str, user_id: Optional[int] = None):
+    def __init__(
+        self,
+        scope: AdminScope,
+        token: str,
+        user_id: Optional[int] = None,
+        roles: Optional[set[str] | list[str] | tuple[str, ...]] = None,
+    ):
         self.scope = scope
         self.token = token
         self.user_id = user_id
+        normalized_roles = {str(role).strip().upper() for role in (roles or []) if str(role).strip()}
+        if scope == AdminScope.SUPER_ADMIN:
+            normalized_roles.update({"SUPER_ADMIN", "ADMIN"})
+        elif scope == AdminScope.ADMIN and not normalized_roles:
+            normalized_roles.add("ADMIN")
+        self.roles = normalized_roles
+
+    def has_any_role(self, *roles: str) -> bool:
+        wanted = {str(role).strip().upper() for role in roles if str(role).strip()}
+        if not wanted:
+            return True
+        if "SUPER_ADMIN" in self.roles:
+            return True
+        if "ADMIN" in self.roles and "ADMIN" in wanted:
+            return True
+        return bool(self.roles.intersection(wanted))
 
 def _read_init_data(x_tg_init_data: Optional[str]) -> str:
     if not x_tg_init_data:
@@ -76,7 +98,7 @@ def _check_admin_token(token: str) -> Optional[AdminIdentity]:
 
     # Check if it's BOT_SERVICE_TOKEN (special case for bot)
     if BOT_SERVICE_TOKEN and token == BOT_SERVICE_TOKEN:
-        return AdminIdentity(scope=AdminScope.ADMIN, token=token, user_id=BOT_SERVICE_USER_ID)
+        return AdminIdentity(scope=AdminScope.ADMIN, token=token, user_id=BOT_SERVICE_USER_ID, roles={"ADMIN"})
 
     # Check if it's in ADMIN_TOKEN_MAP
     if token not in ADMIN_TOKEN_MAP:
@@ -85,10 +107,13 @@ def _check_admin_token(token: str) -> Optional[AdminIdentity]:
     user_id = ADMIN_TOKEN_MAP[token]
 
     # Determine scope from ADMIN_TOKEN_ROLE_MAP
-    role = ADMIN_TOKEN_ROLE_MAP.get(token, "ADMIN")
+    role = str(ADMIN_TOKEN_ROLE_MAP.get(token, "ADMIN")).strip().upper() or "ADMIN"
     scope = AdminScope.SUPER_ADMIN if role == "SUPER_ADMIN" else AdminScope.ADMIN
 
-    return AdminIdentity(scope=scope, token=token, user_id=user_id)
+    roles = {role}
+    if scope == AdminScope.SUPER_ADMIN:
+        roles.add("ADMIN")
+    return AdminIdentity(scope=scope, token=token, user_id=user_id, roles=roles)
 
 
 def require_admin_any(
@@ -98,7 +123,7 @@ def require_admin_any(
 ) -> AdminIdentity:
     if not ADMIN_AUTH_ENABLED:
         # در حالت غیرفعال: اجازه بده (ولی با scope admin)
-        return AdminIdentity(scope=AdminScope.ADMIN, token="DISABLED", user_id=None)
+        return AdminIdentity(scope=AdminScope.ADMIN, token="DISABLED", user_id=None, roles={"ADMIN"})
 
     # ابتدا X-Admin-Token را بررسی کن
     if x_admin_token:
@@ -123,9 +148,9 @@ def require_admin_any(
     normalized_roles = {str(r).upper() for r in role_names}
 
     if "SUPER_ADMIN" in normalized_roles:
-        return AdminIdentity(scope=AdminScope.SUPER_ADMIN, token="TG", user_id=user_id)
+        return AdminIdentity(scope=AdminScope.SUPER_ADMIN, token="TG", user_id=user_id, roles=normalized_roles)
     if normalized_roles.intersection({"ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN"}):
-        return AdminIdentity(scope=AdminScope.ADMIN, token="TG", user_id=user_id)
+        return AdminIdentity(scope=AdminScope.ADMIN, token="TG", user_id=user_id, roles=normalized_roles)
 
     raise HTTPException(status_code=403, detail=FORBIDDEN_DETAIL)
 

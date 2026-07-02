@@ -43,6 +43,15 @@ class CryptoRateService:
                 cfg.CRYPTO_RATE_PROVIDER_FALLBACK,
                 getattr(cfg, "CRYPTO_RATE_PROVIDER_THIRD", ""),
             ]
+        providers = [
+            *providers,
+            cfg.CRYPTO_RATE_PROVIDER_PRIMARY,
+            cfg.CRYPTO_RATE_PROVIDER_FALLBACK,
+            getattr(cfg, "CRYPTO_RATE_PROVIDER_THIRD", ""),
+            "nobitex",
+            "wallex",
+            "tabdeal",
+        ]
         out: list[str] = []
         for raw in providers:
             name = str(raw or "").strip().lower()
@@ -68,7 +77,7 @@ class CryptoRateService:
                 return quote
             except Exception as exc:
                 errors.append(f"{provider}: {exc}")
-                log.warning("crypto rate provider failed: provider=%s asset=%s error=%s", provider, normalized_asset, exc)
+                log.info("crypto rate provider fallback: provider=%s asset=%s reason=%s", provider, normalized_asset, exc)
 
         if normalized_asset == "TON":
             try:
@@ -169,19 +178,59 @@ class CryptoRateService:
 
     @classmethod
     def _fetch_ton_cross(cls, providers: list[str] | None = None) -> CryptoRateQuote:
-        data = cls._http_get(
-            f"{cfg.CRYPTO_BINANCE_BASE_URL}/api/v3/depth",
-            params={"symbol": "TONUSDT", "limit": 5},
-        )
-        asks = data.get("asks")
-        if not isinstance(asks, list) or not asks:
-            raise CryptoRateUnavailable("binance TONUSDT order book has no asks")
+        ton_usdt_errors: list[str] = []
+        ton_usdt: Decimal | None = None
+        ton_source = "binance"
         try:
+            data = cls._http_get(
+                f"{cfg.CRYPTO_BINANCE_BASE_URL}/api/v3/depth",
+                params={"symbol": "TONUSDT", "limit": 5},
+            )
+            asks = data.get("asks")
+            if not isinstance(asks, list) or not asks:
+                raise CryptoRateUnavailable("binance TONUSDT order book has no asks")
             ton_usdt = Decimal(str(asks[0][0]))
         except (InvalidOperation, IndexError, TypeError):
-            raise CryptoRateUnavailable("binance TONUSDT ask price is invalid")
+            ton_usdt_errors.append("binance_depth: invalid ask price")
+        except Exception as exc:
+            ton_usdt_errors.append(f"binance_depth: {exc}")
+
+        if ton_usdt is None:
+            try:
+                data = cls._http_get(
+                    f"{cfg.CRYPTO_BINANCE_BASE_URL}/api/v3/ticker/price",
+                    params={"symbol": "TONUSDT"},
+                )
+                ton_usdt = Decimal(str(data.get("price")))
+            except (InvalidOperation, TypeError):
+                ton_usdt_errors.append("binance_ticker: invalid price")
+            except Exception as exc:
+                ton_usdt_errors.append(f"binance_ticker: {exc}")
+
+        if ton_usdt is None:
+            try:
+                data = cls._http_get(
+                    f"{cfg.CRYPTO_COINGECKO_BASE_URL}/api/v3/simple/price",
+                    params={
+                        "ids": "the-open-network",
+                        "vs_currencies": "usd",
+                        "include_last_updated_at": "true",
+                    },
+                )
+                row = data.get("the-open-network") if isinstance(data, dict) else None
+                if not isinstance(row, dict):
+                    raise CryptoRateUnavailable("coingecko response has no TON price")
+                ton_usdt = Decimal(str(row.get("usd")))
+                ton_source = "coingecko"
+            except (InvalidOperation, TypeError):
+                ton_usdt_errors.append("coingecko: invalid TON/USD price")
+            except Exception as exc:
+                ton_usdt_errors.append(f"coingecko: {exc}")
+
+        if ton_usdt is None:
+            raise CryptoRateUnavailable("; ".join(ton_usdt_errors) or "TON/USD price is unavailable")
         if ton_usdt <= 0:
-            raise CryptoRateUnavailable("binance TONUSDT ask price is not positive")
+            raise CryptoRateUnavailable("TON/USD price is not positive")
 
         provider_names = providers or cls.configured_providers()
         errors: list[str] = []
@@ -194,7 +243,7 @@ class CryptoRateService:
                 return CryptoRateQuote(
                     asset="TON",
                     rate_toman=rate,
-                    provider=f"binance+{provider}",
+                    provider=f"{ton_source}+{provider}",
                     fetched_at=_utcnow(),
                 )
             except Exception as exc:

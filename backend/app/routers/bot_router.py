@@ -14,6 +14,7 @@ from uuid import uuid4
 from urllib.parse import urlparse
 
 from app.core.db import get_db
+from app.core.redis_client import get_redis
 from app.core import config as cfg
 from app.core.config import (
     BOT_SERVICE_TOKEN,
@@ -32,7 +33,9 @@ from app.models.user import User
 from app.models.wallet import Wallet, WalletTx
 from app.models.finance import WithdrawRequest, DepositRequest
 from app.models.crypto import CryptoDepositRequest
-from app.models.game import Game, GameCard, GamePurchase
+from app.models.game import Game, GameCalledNumber, GameCard, GamePurchase
+from app.models.game_event import GameEvent
+from app.models.admin_audit import AdminAuditLog
 from app.models.settings import AppSetting
 from app.services.user_service import UserService
 from app.services.finance_service import FinanceService
@@ -256,6 +259,18 @@ def _require_super_admin_owner(admin: AdminIdentity) -> int:
     return int(admin.user_id)
 
 
+def _require_game_role(admin: AdminIdentity) -> None:
+    if admin.has_any_role("ADMIN", "SUPER_ADMIN", "GAME_OPERATOR"):
+        return
+    raise HTTPException(status_code=403, detail="game operator role required")
+
+
+def _require_finance_role(admin: AdminIdentity) -> None:
+    if admin.has_any_role("ADMIN", "SUPER_ADMIN", "FINANCE_ADMIN"):
+        return
+    raise HTTPException(status_code=403, detail="finance admin role required")
+
+
 def _get_game_or_404(db: Session, game_id: int) -> Game:
     g = db.execute(select(Game).where(Game.id == game_id)).scalar_one_or_none()
     if not g:
@@ -264,6 +279,7 @@ def _get_game_or_404(db: Session, game_id: int) -> Game:
 
 
 def _require_game_admin_access(db: Session, game_id: int, admin: AdminIdentity) -> Game:
+    _require_game_role(admin)
     game = _get_game_or_404(db, game_id)
     if admin.scope == AdminScope.SUPER_ADMIN:
         return game
@@ -271,6 +287,63 @@ def _require_game_admin_access(db: Session, game_id: int, admin: AdminIdentity) 
     if int(game.admin_user_id) != int(admin_uid):
         raise HTTPException(status_code=403, detail="only game admin can manage live link")
     return game
+
+
+def _bot_admin_user_label(user: User | None) -> str:
+    if user is None:
+        return "-"
+    username = str(user.username or "").strip()
+    if username:
+        return f"@{username}"
+    name = " ".join(
+        x
+        for x in [
+            str(user.first_name or "").strip(),
+            str(user.last_name or "").strip(),
+        ]
+        if x
+    )
+    return name or f"کاربر {int(user.tg_user_id)}"
+
+
+def _require_any_admin_role(admin: AdminIdentity) -> None:
+    if admin.has_any_role("ADMIN", "SUPER_ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN"):
+        return
+    raise HTTPException(status_code=403, detail="admin role required")
+
+
+def _require_user_admin_role(admin: AdminIdentity) -> None:
+    if admin.has_any_role("ADMIN", "SUPER_ADMIN"):
+        return
+    raise HTTPException(status_code=403, detail="admin role required")
+
+
+def _bot_system_health(db: Session) -> dict[str, Any]:
+    services: list[dict[str, Any]] = [
+        {"key": "backend", "title": "Backend", "ok": True, "status": "OK", "detail": "API فعال است."}
+    ]
+    try:
+        db.execute(select(func.now())).scalar_one_or_none()
+        services.append({"key": "mysql", "title": "MySQL", "ok": True, "status": "OK", "detail": "اتصال دیتابیس سالم است."})
+    except Exception as exc:
+        services.append({"key": "mysql", "title": "MySQL", "ok": False, "status": "FAIL", "detail": str(exc)[:180]})
+
+    try:
+        redis_ok = bool(get_redis().ping())
+        services.append({"key": "redis", "title": "Redis", "ok": redis_ok, "status": "OK" if redis_ok else "FAIL", "detail": "Redis پاسخ داد." if redis_ok else "Redis پاسخ نداد."})
+    except Exception as exc:
+        services.append({"key": "redis", "title": "Redis", "ok": False, "status": "FAIL", "detail": str(exc)[:180]})
+
+    services.append(
+        {
+            "key": "bot",
+            "title": "Telegram Bot",
+            "ok": None,
+            "status": "MONITORED",
+            "detail": "وضعیت bot از Docker health و مانیتور سرور بررسی می‌شود.",
+        }
+    )
+    return {"services": services, "checked_at": datetime.utcnow().isoformat(timespec="seconds")}
 
 
 def _parse_date_or_datetime(raw: Optional[str], *, end_of_day: bool = False) -> datetime | None:
@@ -1244,7 +1317,7 @@ def bot_admin_list_crypto_deposits(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
-    _ = admin
+    _require_finance_role(admin)
     query = (
         select(CryptoDepositRequest, User)
         .join(User, User.id == CryptoDepositRequest.user_id)
@@ -1272,7 +1345,7 @@ def bot_admin_get_crypto_deposit(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
-    _ = admin
+    _require_finance_role(admin)
     row = db.execute(
         select(CryptoDepositRequest, User)
         .join(User, User.id == CryptoDepositRequest.user_id)
@@ -1295,6 +1368,7 @@ def bot_admin_approve_crypto_deposit(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     try:
         invoice, tx = CryptoDepositService.approve_review(db, invoice_id=int(invoice_id))
         invoice.admin_notified_at = datetime.utcnow()
@@ -1330,6 +1404,7 @@ def bot_admin_reject_crypto_deposit(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     try:
         invoice = CryptoDepositService.reject_review(
             db,
@@ -1465,7 +1540,7 @@ def bot_ack_crypto_notification(
 def bot_admin_crypto_health(
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
-    _ = admin
+    _require_finance_role(admin)
     return CryptoHealthService.check()
 
 
@@ -1476,7 +1551,7 @@ def bot_admin_crypto_reconciliation(
     admin: AdminIdentity = Depends(get_admin_identity),
     db: Session = Depends(get_db),
 ):
-    _ = admin
+    _require_finance_role(admin)
     end_at = _parse_date_or_datetime(to_at) if to_at else datetime.utcnow()
     start_at = (
         _parse_date_or_datetime(from_at)
@@ -1490,6 +1565,246 @@ def bot_admin_crypto_reconciliation(
     if end_at.tzinfo is not None:
         end_at = end_at.astimezone(timezone.utc).replace(tzinfo=None)
     return CryptoReconciliationService.run(db, start_at=start_at, end_at=end_at)
+
+
+@router.get("/admin/ops-dashboard")
+def bot_admin_ops_dashboard(
+    admin: AdminIdentity = Depends(get_admin_identity),
+    db: Session = Depends(get_db),
+):
+    _require_any_admin_role(admin)
+
+    game_query = select(Game).where(Game.status.in_(["LOBBY", "RUNNING"])).order_by(Game.id.desc()).limit(6)
+    if admin.scope != AdminScope.SUPER_ADMIN and admin.has_any_role("GAME_OPERATOR") and not admin.has_any_role("ADMIN"):
+        game_query = game_query.where(Game.admin_user_id == _require_admin_user_id(admin))
+    games = db.execute(game_query).scalars().all()
+
+    active_games: list[dict[str, Any]] = []
+    for g in games:
+        last_number = db.execute(
+            select(GameCalledNumber.number)
+            .where(GameCalledNumber.game_id == int(g.id))
+            .order_by(GameCalledNumber.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        called_count = db.execute(
+            select(func.count(GameCalledNumber.id)).where(GameCalledNumber.game_id == int(g.id))
+        ).scalar_one()
+        cards_count = db.execute(
+            select(func.count(GameCard.id)).where(GameCard.game_id == int(g.id))
+        ).scalar_one()
+        players_count = db.execute(
+            select(func.count(func.distinct(GameCard.user_id))).where(GameCard.game_id == int(g.id))
+        ).scalar_one()
+        active_games.append(
+            {
+                "id": int(g.id),
+                "status": str(g.status),
+                "card_price": int(g.card_price),
+                "sold_amount": int(g.sold_amount),
+                "prize_pool": int(g.prize_pool),
+                "called_count": int(called_count or 0),
+                "last_number": int(last_number) if last_number is not None else None,
+                "cards_count": int(cards_count or 0),
+                "players_count": int(players_count or 0),
+            }
+        )
+
+    counts = {
+        "pending_deposits": int(db.execute(select(func.count(DepositRequest.id)).where(DepositRequest.status == "PENDING_REVIEW")).scalar_one() or 0),
+        "pending_withdraws": int(db.execute(select(func.count(WithdrawRequest.id)).where(WithdrawRequest.status == "PENDING")).scalar_one() or 0),
+        "approved_withdraws": int(db.execute(select(func.count(WithdrawRequest.id)).where(WithdrawRequest.status == "APPROVED")).scalar_one() or 0),
+        "crypto_needs_review": int(db.execute(select(func.count(CryptoDepositRequest.id)).where(CryptoDepositRequest.status == "NEEDS_REVIEW")).scalar_one() or 0),
+        "game_errors": int(db.execute(select(func.count(GameEvent.id)).where(GameEvent.kind == "ERROR")).scalar_one() or 0),
+        "risk_events_24h": int(
+            db.execute(
+                select(func.count(AdminAuditLog.id)).where(
+                    AdminAuditLog.action.like("risk.%"),
+                    AdminAuditLog.created_at >= datetime.utcnow() - timedelta(hours=24),
+                )
+            ).scalar_one()
+            or 0
+        ),
+    }
+    return {
+        "active_games": active_games,
+        "counts": counts,
+        "system": _bot_system_health(db),
+        "server_time": datetime.utcnow().isoformat(timespec="seconds"),
+    }
+
+
+@router.get("/admin/audit/logs")
+def bot_admin_audit_logs(
+    limit: int = Query(default=30, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    admin: AdminIdentity = Depends(get_admin_identity),
+    db: Session = Depends(get_db),
+):
+    _require_any_admin_role(admin)
+    stmt = (
+        select(AdminAuditLog, User)
+        .outerjoin(User, User.id == AdminAuditLog.actor_user_id)
+        .order_by(AdminAuditLog.id.desc())
+        .limit(int(limit))
+        .offset(int(offset))
+    )
+    if not admin.has_any_role("ADMIN", "SUPER_ADMIN"):
+        allowed_actions: list[str] = []
+        if admin.has_any_role("GAME_OPERATOR"):
+            allowed_actions.extend(["game.%", "risk.buy.%"])
+        if admin.has_any_role("FINANCE_ADMIN"):
+            allowed_actions.extend(["deposit.%", "withdraw.%", "crypto.%", "wallet.%", "risk.buy.%"])
+        if allowed_actions:
+            from sqlalchemy import or_  # local import keeps the router import list stable
+            stmt = stmt.where(or_(*[AdminAuditLog.action.like(pattern) for pattern in allowed_actions]))
+    rows = db.execute(stmt).all()
+    items: list[dict[str, Any]] = []
+    for log_row, user in rows:
+        items.append(
+            {
+                "id": int(log_row.id),
+                "actor_user_id": int(log_row.actor_user_id) if log_row.actor_user_id is not None else None,
+                "actor_tg_user_id": int(user.tg_user_id) if user and user.tg_user_id is not None else None,
+                "actor_label": _bot_admin_user_label(user),
+                "actor_scope": str(log_row.actor_scope),
+                "action": str(log_row.action),
+                "target_type": str(log_row.target_type),
+                "target_id": int(log_row.target_id) if log_row.target_id is not None else None,
+                "details": log_row.details_json if isinstance(log_row.details_json, dict) else None,
+                "created_at": str(log_row.created_at) if log_row.created_at else None,
+            }
+        )
+    return {"total": len(items), "limit": int(limit), "offset": int(offset), "items": items}
+
+
+@router.get("/admin/risk-alerts")
+def bot_admin_risk_alerts(
+    admin: AdminIdentity = Depends(get_admin_identity),
+    db: Session = Depends(get_db),
+):
+    _require_any_admin_role(admin)
+    alerts: list[dict[str, Any]] = []
+    now = datetime.utcnow()
+
+    if admin.has_any_role("ADMIN", "SUPER_ADMIN", "GAME_OPERATOR"):
+        purchase_rows = db.execute(
+            select(
+                GamePurchase.user_id,
+                GamePurchase.game_id,
+                func.count(GamePurchase.id).label("purchase_count"),
+                func.coalesce(func.sum(GamePurchase.qty), 0).label("qty_sum"),
+                func.coalesce(func.sum(GamePurchase.total_price), 0).label("amount_sum"),
+                func.max(GamePurchase.created_at).label("last_at"),
+            )
+            .where(GamePurchase.created_at >= now - timedelta(minutes=30))
+            .group_by(GamePurchase.user_id, GamePurchase.game_id)
+            .order_by(func.max(GamePurchase.created_at).desc())
+            .limit(40)
+        ).all()
+        for user_id, game_id, purchase_count, qty_sum, amount_sum, last_at in purchase_rows:
+            if int(qty_sum or 0) < 10 and int(purchase_count or 0) < 3:
+                continue
+            user = db.get(User, int(user_id))
+            alerts.append(
+                {
+                    "type": "rapid_purchase",
+                    "severity": "warning",
+                    "title": "خرید پرتکرار کارت",
+                    "body": f"{_bot_admin_user_label(user)} در ۳۰ دقیقه اخیر {int(qty_sum or 0)} کارت در بازی #{int(game_id)} خریده است.",
+                    "target_type": "game",
+                    "target_id": int(game_id),
+                    "created_at": str(last_at) if last_at else None,
+                    "meta": {"user_id": int(user_id), "amount_sum": int(amount_sum or 0), "purchase_count": int(purchase_count or 0)},
+                }
+            )
+
+        insufficient_logs = db.execute(
+            select(AdminAuditLog, User)
+            .outerjoin(User, User.id == AdminAuditLog.actor_user_id)
+            .where(
+                AdminAuditLog.action == "risk.buy.insufficient_balance",
+                AdminAuditLog.created_at >= now - timedelta(hours=24),
+            )
+            .order_by(AdminAuditLog.id.desc())
+            .limit(20)
+        ).all()
+        for log_row, user in insufficient_logs:
+            details = log_row.details_json if isinstance(log_row.details_json, dict) else {}
+            alerts.append(
+                {
+                    "type": "insufficient_balance",
+                    "severity": "warning",
+                    "title": "تلاش خرید با موجودی ناکافی",
+                    "body": f"{_bot_admin_user_label(user)} برای بازی #{details.get('game_id') or log_row.target_id or '-'} موجودی کافی نداشت.",
+                    "target_type": str(log_row.target_type),
+                    "target_id": int(log_row.target_id) if log_row.target_id is not None else None,
+                    "created_at": str(log_row.created_at) if log_row.created_at else None,
+                    "meta": details,
+                }
+            )
+
+    if admin.has_any_role("ADMIN", "SUPER_ADMIN", "FINANCE_ADMIN"):
+        crypto_rows = db.execute(
+            select(CryptoDepositRequest, User)
+            .join(User, User.id == CryptoDepositRequest.user_id)
+            .where(CryptoDepositRequest.status.in_(["NEEDS_REVIEW", "CONFIRMING"]))
+            .order_by(CryptoDepositRequest.id.desc())
+            .limit(20)
+        ).all()
+        for invoice, user in crypto_rows:
+            variance = str(invoice.payment_variance or "")
+            severity = "danger" if str(invoice.status) == "NEEDS_REVIEW" or variance in {"UNDERPAID", "OVERPAID"} else "info"
+            alerts.append(
+                {
+                    "type": "crypto_review",
+                    "severity": severity,
+                    "title": "پرداخت کریپتو نیازمند توجه",
+                    "body": f"فاکتور #{int(invoice.id)} برای {_bot_admin_user_label(user)} در وضعیت {str(invoice.status)} است.",
+                    "target_type": "crypto_deposit_request",
+                    "target_id": int(invoice.id),
+                    "created_at": str(invoice.updated_at or invoice.created_at),
+                    "meta": {
+                        "network": str(invoice.network),
+                        "asset": str(invoice.asset),
+                        "payment_variance": variance or None,
+                        "tx_hash": invoice.tx_hash,
+                        "amount_toman": int(invoice.amount_toman),
+                    },
+                }
+            )
+
+        try:
+            health = CryptoHealthService.check()
+            if not bool(health.get("ok", False)) or bool(health.get("degraded", False)):
+                alerts.append(
+                    {
+                        "type": "crypto_provider",
+                        "severity": "warning" if bool(health.get("degraded", False)) else "danger",
+                        "title": "اختلال provider کریپتو",
+                        "body": "یکی از مسیرهای نرخ یا شبکه کریپتو نیازمند بررسی است.",
+                        "target_type": "crypto_health",
+                        "target_id": None,
+                        "created_at": now.isoformat(timespec="seconds"),
+                        "meta": health,
+                    }
+                )
+        except Exception as exc:
+            alerts.append(
+                {
+                    "type": "crypto_provider",
+                    "severity": "danger",
+                    "title": "خطای بررسی سلامت کریپتو",
+                    "body": str(exc)[:220],
+                    "target_type": "crypto_health",
+                    "target_id": None,
+                    "created_at": now.isoformat(timespec="seconds"),
+                    "meta": {},
+                }
+            )
+
+    alerts.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return {"total": len(alerts), "items": alerts[:80], "generated_at": now.isoformat(timespec="seconds")}
 
 
 # ==================== GET /bot/deposit-destinations ====================
@@ -2114,7 +2429,7 @@ def list_bot_admin_games(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
-    _ = admin
+    _require_game_role(admin)
 
     normalized_statuses = _parse_admin_game_statuses(status)
     where = ["1=1"]
@@ -2133,6 +2448,9 @@ def list_bot_admin_games(
     if tg_topic_id is not None:
         where.append("tg_topic_id = :tg_topic_id")
         params["tg_topic_id"] = int(tg_topic_id)
+    if admin.scope != AdminScope.SUPER_ADMIN:
+        where.append("admin_user_id = :admin_user_id")
+        params["admin_user_id"] = _require_admin_user_id(admin)
 
     total_row = db.execute(
         text(f"""
@@ -2198,7 +2516,7 @@ def get_bot_admin_game_report(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
-    _ = admin
+    _require_game_admin_access(db, int(game_id), admin)
 
     game = db.execute(
         text("""
@@ -2490,6 +2808,7 @@ def ensure_bot_admin_game_active(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_game_admin_access(db, int(game_id), admin)
     src_game = _get_game_or_404(db, game_id)
 
     active_q = (
@@ -2557,6 +2876,7 @@ def start_bot_admin_game(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_game_admin_access(db, int(game_id), admin)
     admin_uid = _require_admin_user_id(admin)
     try:
         before = db.execute(select(Game.status).where(Game.id == int(game_id))).scalar_one_or_none()
@@ -2606,6 +2926,7 @@ def call_number_on_bot_admin_game(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_game_admin_access(db, int(game_id), admin)
     admin_uid = _require_admin_user_id(admin)
     try:
         res = GameService.call_number(
@@ -2653,6 +2974,7 @@ def undo_last_call_on_bot_admin_game(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_game_admin_access(db, int(game_id), admin)
     admin_uid = _require_admin_user_id(admin)
     try:
         res = GameService.undo_last_call(
@@ -2681,6 +3003,7 @@ def set_bot_admin_game_status(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_game_admin_access(db, int(game_id), admin)
     requested = (payload.status or "").strip().upper()
     if requested == "ACTIVE":
         requested = "RUNNING"
@@ -2738,6 +3061,7 @@ def list_admin_deposit_requests(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     """
     List all deposit requests (for admin).
 
@@ -2824,6 +3148,7 @@ def get_admin_deposit_request(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     row = db.execute(
         select(DepositRequest, User)
         .join(User, User.id == DepositRequest.user_id)
@@ -2870,6 +3195,7 @@ def list_admin_withdraw_requests(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     """
     List withdraw requests (for admin) with pagination.
 
@@ -2941,6 +3267,7 @@ def get_admin_withdraw_request(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     row = db.execute(
         select(WithdrawRequest, User)
         .join(User, User.id == WithdrawRequest.user_id)
@@ -2974,6 +3301,7 @@ def approve_admin_withdraw_request(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     admin_uid = _require_admin_user_id(admin)
     try:
         wr, tx = FinanceService.approve_withdraw(
@@ -3004,6 +3332,7 @@ def mark_admin_withdraw_paid(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     admin_uid = _require_admin_user_id(admin)
     try:
         wr = FinanceService.mark_withdraw_paid(
@@ -3034,6 +3363,7 @@ def reject_admin_withdraw_request(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     admin_uid = _require_admin_user_id(admin)
     try:
         wr = FinanceService.reject_withdraw(
@@ -3065,6 +3395,7 @@ def approve_deposit_request(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     """
     Approve a deposit request and credit the wallet.
 
@@ -3094,7 +3425,7 @@ def approve_deposit_request(
         result_dr, tx = FinanceService.approve_deposit(
             db,
             deposit_id,
-            admin_user_id=admin.user_id,
+            admin_user_id=_require_admin_user_id(admin),
             idempotency_key=payload.idempotency_key,
         )
         db.commit()
@@ -3122,6 +3453,7 @@ def reject_deposit_request(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     """
     Reject a deposit request.
 
@@ -3145,7 +3477,7 @@ def reject_deposit_request(
         result_dr = FinanceService.reject_deposit(
             db,
             deposit_id,
-            admin_user_id=admin.user_id,
+            admin_user_id=_require_admin_user_id(admin),
         )
         db.commit()
 
@@ -3171,6 +3503,7 @@ def manual_charge(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     """
     Manually charge a user's wallet (admin only).
 
@@ -3242,6 +3575,7 @@ def admin_get_deposit_receipt(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(get_admin_identity),
 ):
+    _require_finance_role(admin)
     dr = db.execute(select(DepositRequest).where(DepositRequest.id == deposit_id)).scalar_one_or_none()
     if not dr:
         raise HTTPException(status_code=404, detail="deposit_request not found")

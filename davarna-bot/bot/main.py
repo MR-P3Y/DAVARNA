@@ -40,6 +40,7 @@ from bot.routers.join_gate import router as join_gate_router
 from bot.routers.notifications import router as notifications_router
 from bot.routers.admin_games import router as admin_games_router
 from bot.routers.admin_users import router as admin_users_router
+from bot.routers.admin_ops import router as admin_ops_router
 from bot.routers.super_admin import router as super_admin_router
 
 
@@ -227,6 +228,7 @@ async def main():
     dp.include_router(notifications_router)
     dp.include_router(admin_games_router)
     dp.include_router(admin_users_router)
+    dp.include_router(admin_ops_router)
     dp.include_router(super_admin_router)
     # error router should be near the end
     dp.include_router(errors_router)

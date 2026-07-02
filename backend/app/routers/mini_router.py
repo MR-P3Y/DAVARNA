@@ -689,7 +689,42 @@ def get_mini_super_admin_identity(
 
 def _mini_to_admin_identity(ident: MiniAdminIdentity) -> AdminIdentity:
     scope = AdminScope.SUPER_ADMIN if bool(ident.is_super_admin) else AdminScope.ADMIN
-    return AdminIdentity(scope=scope, token="MINI", user_id=int(ident.user_id))
+    return AdminIdentity(scope=scope, token="MINI", user_id=int(ident.user_id), roles=set(ident.roles))
+
+
+def _mini_has_role(ident: MiniAdminIdentity, *roles: str) -> bool:
+    wanted = {str(role).strip().upper() for role in roles if str(role).strip()}
+    if not wanted:
+        return True
+    if ident.is_super_admin or "SUPER_ADMIN" in ident.roles:
+        return True
+    if "ADMIN" in ident.roles and "ADMIN" in wanted:
+        return True
+    return bool(set(ident.roles).intersection(wanted))
+
+
+def _mini_require_game_role(ident: MiniAdminIdentity) -> None:
+    if _mini_has_role(ident, "ADMIN", "SUPER_ADMIN", "GAME_OPERATOR"):
+        return
+    raise HTTPException(status_code=403, detail="game operator role required")
+
+
+def _mini_require_finance_role(ident: MiniAdminIdentity) -> None:
+    if _mini_has_role(ident, "ADMIN", "SUPER_ADMIN", "FINANCE_ADMIN"):
+        return
+    raise HTTPException(status_code=403, detail="finance admin role required")
+
+
+def _mini_require_user_role(ident: MiniAdminIdentity) -> None:
+    if _mini_has_role(ident, "ADMIN", "SUPER_ADMIN"):
+        return
+    raise HTTPException(status_code=403, detail="user admin role required")
+
+
+def _mini_require_finance_or_game_role(ident: MiniAdminIdentity) -> None:
+    if _mini_has_role(ident, "ADMIN", "SUPER_ADMIN", "FINANCE_ADMIN", "GAME_OPERATOR"):
+        return
+    raise HTTPException(status_code=403, detail="admin role required")
 
 
 def _mini_get_game_or_404(db: Session, game_id: int) -> Game:
@@ -700,6 +735,7 @@ def _mini_get_game_or_404(db: Session, game_id: int) -> Game:
 
 
 def _mini_require_game_manage_access(db: Session, game_id: int, ident: MiniAdminIdentity) -> Game:
+    _mini_require_game_role(ident)
     game = _mini_get_game_or_404(db, int(game_id))
     if ident.is_super_admin:
         return game
@@ -2989,7 +3025,7 @@ def mini_admin_audit_logs(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
-    _ = ident
+    _mini_require_user_role(ident)
     rows = db.execute(
         select(AdminAuditLog, User)
         .outerjoin(User, User.id == AdminAuditLog.actor_user_id)
@@ -3021,7 +3057,7 @@ def mini_admin_risk_alerts(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
-    _ = ident
+    _mini_require_user_role(ident)
     alerts: list[dict[str, Any]] = []
     now = datetime.utcnow()
 
@@ -3171,6 +3207,7 @@ def mini_admin_users_search(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_or_game_role(ident)
     return admin_users_router.admin_user_search(
         tg_user_id=tg_user_id,
         username=username,
@@ -3189,6 +3226,7 @@ def mini_admin_user_profile(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_or_game_role(ident)
     return admin_users_router.admin_user_profile(
         tg_user_id=int(tg_user_id),
         _=_mini_to_admin_identity(ident),
@@ -3203,6 +3241,7 @@ def mini_admin_user_financial_history(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_role(ident)
     return admin_users_router.admin_user_financial_history(
         tg_user_id=int(tg_user_id),
         limit=int(limit),
@@ -3218,6 +3257,7 @@ def mini_admin_user_games_history(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_or_game_role(ident)
     return admin_users_router.admin_user_games_history(
         tg_user_id=int(tg_user_id),
         limit=int(limit),
@@ -3234,6 +3274,7 @@ def mini_admin_user_restrict(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_user_role(ident)
     enforce_write_rate_limit(int(ident.user_id))
     return admin_users_router.admin_user_restrict(
         tg_user_id=int(tg_user_id),
@@ -3252,6 +3293,7 @@ def mini_admin_user_unrestrict(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_user_role(ident)
     enforce_write_rate_limit(int(ident.user_id))
     return admin_users_router.admin_user_unrestrict(
         tg_user_id=int(tg_user_id),
@@ -3270,6 +3312,7 @@ def mini_admin_user_wallet_adjust(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_role(ident)
     enforce_write_rate_limit(int(ident.user_id))
     return admin_users_router.admin_user_wallet_adjust(
         tg_user_id=int(tg_user_id),
@@ -3287,6 +3330,7 @@ def mini_admin_user_notify(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_user_role(ident)
     enforce_write_rate_limit(int(ident.user_id))
     return admin_users_router.admin_user_notify(
         tg_user_id=int(tg_user_id),
@@ -3303,6 +3347,7 @@ def mini_admin_user_compose_message(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_or_game_role(ident)
     return admin_users_router.admin_user_compose_message(
         tg_user_id=int(tg_user_id),
         payload=payload,
@@ -3315,7 +3360,7 @@ def mini_admin_user_compose_message(
 def mini_admin_create_options(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
 ):
-    _ = ident
+    _mini_require_game_role(ident)
     topics = [
         MiniAdminCreateTopicOut(key=key, title=title, topic_id=int(topic_id))
         for key, title, topic_id in _mini_configured_game_topics()
@@ -3336,6 +3381,7 @@ def mini_admin_games(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_game_role(ident)
     statuses = _parse_status_filter(status)
     where = [Game.status.in_(statuses)]
     if tg_group_id is not None:
@@ -3382,6 +3428,7 @@ def mini_admin_create_game(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_game_role(ident)
     idem_key = str(payload.idempotency_key or "").strip()
     if len(idem_key) < 6:
         raise HTTPException(status_code=400, detail="کلید یکتای عملیات نامعتبر است.")
@@ -3857,7 +3904,7 @@ def mini_admin_list_crypto_deposits(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
-    _ = ident
+    _mini_require_finance_role(ident)
     query = select(CryptoDepositRequest)
     count_query = select(func.count(CryptoDepositRequest.id))
     if status:
@@ -3883,6 +3930,7 @@ def mini_admin_approve_crypto_deposit(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_role(ident)
     try:
         invoice, tx = CryptoDepositService.approve_review(db, invoice_id=int(invoice_id))
         invoice.admin_notified_at = datetime.utcnow()
@@ -3919,6 +3967,7 @@ def mini_admin_reject_crypto_deposit(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_role(ident)
     try:
         invoice = CryptoDepositService.reject_review(
             db,
@@ -3959,7 +4008,7 @@ def mini_admin_list_deposits(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
-    _ = ident
+    _mini_require_finance_role(ident)
     query = (
         select(DepositRequest, User)
         .join(User, User.id == DepositRequest.user_id)
@@ -4003,7 +4052,7 @@ def mini_admin_get_deposit_receipt(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
-    _ = ident
+    _mini_require_finance_role(ident)
     dr = db.execute(
         select(DepositRequest).where(DepositRequest.id == int(deposit_id))
     ).scalar_one_or_none()
@@ -4030,6 +4079,7 @@ def mini_admin_approve_deposit(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_role(ident)
     dr, tx = FinanceService.approve_deposit(
         db=db,
         deposit_id=int(deposit_id),
@@ -4056,6 +4106,7 @@ def mini_admin_reject_deposit(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_role(ident)
     reason = str((payload.reason if payload else "") or "").strip() or "رد توسط ادمین"
     dr = FinanceService.reject_deposit(
         db=db,
@@ -4081,7 +4132,7 @@ def mini_admin_list_withdraws(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
-    _ = ident
+    _mini_require_finance_role(ident)
     query = (
         select(WithdrawRequest, User)
         .join(User, User.id == WithdrawRequest.user_id)
@@ -4131,7 +4182,7 @@ def mini_admin_withdraw_wallet_status(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
-    _ = ident
+    _mini_require_finance_role(ident)
     wr = db.execute(
         select(WithdrawRequest).where(WithdrawRequest.id == int(withdraw_id))
     ).scalar_one_or_none()
@@ -4188,6 +4239,7 @@ def mini_admin_approve_withdraw(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_role(ident)
     wr, tx = FinanceService.approve_withdraw(
         db=db,
         withdraw_id=int(withdraw_id),
@@ -4205,6 +4257,7 @@ def mini_admin_save_withdraw_proof(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_role(ident)
     enforce_write_rate_limit(int(ident.user_id))
     wr = db.execute(
         select(WithdrawRequest).where(WithdrawRequest.id == int(withdraw_id))
@@ -4291,7 +4344,7 @@ def mini_admin_get_withdraw_proof(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
-    _ = ident
+    _mini_require_finance_role(ident)
     wr = db.execute(
         select(WithdrawRequest).where(WithdrawRequest.id == int(withdraw_id))
     ).scalar_one_or_none()
@@ -4320,7 +4373,7 @@ def mini_admin_get_withdraw_proof_file(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
-    _ = ident
+    _mini_require_finance_role(ident)
     proof = _setting_get_json(db, _withdraw_paid_proof_setting_key(int(withdraw_id)))
     if not isinstance(proof, dict):
         raise HTTPException(status_code=404, detail="withdraw proof not found")
@@ -4588,6 +4641,7 @@ def mini_admin_paid_withdraw(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_role(ident)
     wr = FinanceService.mark_withdraw_paid(
         db=db,
         withdraw_id=int(withdraw_id),
@@ -4619,6 +4673,7 @@ def mini_admin_reject_withdraw(
     ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
     db: Session = Depends(get_db),
 ):
+    _mini_require_finance_role(ident)
     reason = str((payload.reason if payload else "") or "").strip() or "رد توسط ادمین"
     wr = FinanceService.reject_withdraw(
         db=db,

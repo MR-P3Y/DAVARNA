@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,8 @@ def list_admin_audit_logs(
     db: Session = Depends(get_db),
     admin: AdminIdentity = Depends(require_admin_any),
 ):
+    if not admin.has_any_role("ADMIN", "SUPER_ADMIN"):
+        raise HTTPException(status_code=403, detail="admin role required")
     stmt = select(AdminAuditLog)
 
     if actor_user_id is not None:

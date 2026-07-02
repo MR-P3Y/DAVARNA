@@ -76,6 +76,23 @@ class CryptoRateServiceTests(unittest.TestCase):
         self.assertEqual(quote.provider, "binance+nobitex")
         self.assertEqual(quote.rate_toman, Decimal("292500"))
 
+    def test_ton_cross_rate_falls_back_to_coingecko_when_binance_is_unavailable(self):
+        def fake_http_get(url, *, params=None):
+            if "binance" in url or "data-api.binance" in url:
+                raise RuntimeError("binance blocked")
+            if "coingecko" in url:
+                return {"the-open-network": {"usd": 1.65, "last_updated_at": 1779092258}}
+            if "wallex" in url:
+                return {"result": {"ask": [{"price": 176000}]}}
+            raise RuntimeError(f"unexpected url: {url}")
+
+        with patch.object(CryptoRateService, "_http_get", side_effect=fake_http_get):
+            quote = CryptoRateService._fetch_ton_cross(["wallex"])
+
+        self.assertEqual(quote.asset, "TON")
+        self.assertEqual(quote.provider, "coingecko+wallex")
+        self.assertEqual(quote.rate_toman, Decimal("290400.00"))
+
 
 class DecimalQuoteFactory:
     @staticmethod

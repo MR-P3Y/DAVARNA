@@ -18,6 +18,9 @@ async def start(
     tg_user_id: int,
     is_admin: bool = False,
     is_super_admin: bool = False,
+    is_game_admin: bool = False,
+    is_finance_admin: bool = False,
+    is_user_admin: bool = False,
 ):
     name = m.from_user.full_name if m.from_user else "رفیق"
 
@@ -53,6 +56,12 @@ async def start(
     )
     await m.answer(
         text,
-        reply_markup=main_menu_kb(is_admin=is_admin, is_super_admin=is_super_admin),
+        reply_markup=main_menu_kb(
+            is_admin=is_admin,
+            is_super_admin=is_super_admin,
+            is_game_admin=is_game_admin,
+            is_finance_admin=is_finance_admin,
+            is_user_admin=is_user_admin,
+        ),
         parse_mode="HTML",
     )
