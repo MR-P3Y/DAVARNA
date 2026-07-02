@@ -570,6 +570,7 @@ class GameService:
         number: int,
         admin_user_id: int,
         idempotency_key: str,
+        can_manage_any: bool = False,
     ) -> dict:
         # ---- Redis idempotency ----
         idem_cache_key = f"idem:call:{game_id}:{admin_user_id}:{idempotency_key}"
@@ -703,6 +704,7 @@ class GameService:
         game_id: int,
         admin_user_id: int,
         idempotency_key: str,
+        can_manage_any: bool = False,
     ) -> dict:
         idem_cache_key = f"idem:undo_call:{game_id}:{admin_user_id}:{idempotency_key}"
         try:
@@ -1195,6 +1197,5 @@ class GameService:
             "called_numbers": called_numbers,
             "cards": out_cards,
         }
-
 
 
