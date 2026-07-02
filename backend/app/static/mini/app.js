@@ -1788,14 +1788,13 @@ function renderLiveGameBar(items = state.gamesCache) {
   bar.innerHTML = `
     <div class="live-game-bar-main">
       <span class="live-game-bar-status ${safeText(statusKey.toLowerCase())}">${safeText(statusLabel(statusKey))}</span>
-      <strong>بازی #${safeText(gid)}</strong>
-      <span>آخرین عدد: <b>${safeText(lastNumber ?? "-")}</b></span>
-      <span>کارت‌های من: <b>${safeText(myCards)}</b></span>
-      <span>${canBuy ? "خرید کارت باز است" : "خرید کارت بسته است"}</span>
+      <strong>#${safeText(gid)}</strong>
+      <span>آخرین: <b>${safeText(lastNumber ?? "-")}</b></span>
+      <span>کارت من: <b>${safeText(myCards)}</b></span>
     </div>
     <div class="live-game-bar-actions">
-      <button class="small-btn live-bar-open-btn" data-game-id="${safeText(gid)}" type="button">وضعیت زنده</button>
-      <button class="small-btn primary live-bar-buy-btn" data-game-id="${safeText(gid)}" type="button" ${canBuy ? "" : "disabled"}>خرید کارت</button>
+      <button class="small-btn live-bar-open-btn" data-game-id="${safeText(gid)}" type="button">زنده</button>
+      <button class="small-btn primary live-bar-buy-btn" data-game-id="${safeText(gid)}" type="button" ${canBuy ? "" : "disabled"}>خرید</button>
     </div>
   `;
   bar.querySelector(".live-bar-open-btn")?.addEventListener("click", () => {
@@ -3523,10 +3522,10 @@ function renderCryptoHealthSummary(payload) {
     const checkedAt = item?.checked_at ? formatFaDateTime(item.checked_at) : "-";
     const reason = String(item?.unavailable_reason || "").trim();
     return `
-      <div class="crypto-health-card ${healthy ? "is-ok" : "is-error"}">
+      <div class="crypto-health-card ${healthy ? "is-ok" : "is-warning"}">
         <div>
           <strong dir="ltr">${safeText(asset)} / ${safeText(network)}</strong>
-          <span>${healthy ? "فعال و آماده صدور فاکتور" : safeText(reason || "موقتاً غیرفعال")}</span>
+          <span>${healthy ? "آخرین بررسی موفق بود" : safeText(reason || "آخرین نرخ‌گیری موفق نبود؛ هنگام صدور فاکتور دوباره تلاش می‌شود.")}</span>
         </div>
         <div class="crypto-health-meta">
           <span>نرخ: <b>${safeText(rate)}</b></span>
@@ -3554,18 +3553,18 @@ function drawCryptoOptions(payload) {
       .map((item) => [String(item.network || "").toUpperCase(), item])
       .filter(([network]) => Boolean(network))
   );
-  const healthy = new Set(
-    [...optionMap.entries()]
-      .filter(([, item]) => Boolean(item?.healthy))
-      .map(([network]) => network)
-  );
+  const available = new Set([...optionMap.keys()]);
   document.querySelectorAll(".crypto-network-option").forEach((button) => {
     const network = String(button.getAttribute("data-network") || "").toUpperCase();
     const option = optionMap.get(network);
-    const usable = enabled && Boolean(option?.healthy);
+    const usable = enabled && Boolean(option);
+    const rateOk = Boolean(option?.healthy);
     button.disabled = !usable;
     button.classList.toggle("is-unavailable", !usable);
-    button.title = usable ? "شبکه آماده پرداخت است" : String(option?.unavailable_reason || "شبکه در دسترس نیست");
+    button.classList.toggle("is-rate-warning", usable && !rateOk);
+    button.title = usable
+      ? "شبکه قابل انتخاب است؛ نرخ لحظه‌ای هنگام صدور فاکتور گرفته می‌شود."
+      : "شبکه در تنظیمات پرداخت فعال نیست.";
     let health = button.querySelector(".crypto-network-health");
     if (!health) {
       health = document.createElement("span");
@@ -3573,9 +3572,11 @@ function drawCryptoOptions(payload) {
       button.querySelector(".crypto-network-copy")?.appendChild(health);
     }
     health.textContent = usable
-      ? `آماده • نرخ ${toman(option?.rate_toman || 0)}`
-      : String(option?.unavailable_reason || "موقتاً غیرفعال");
-    health.dataset.state = usable ? "ok" : "error";
+      ? rateOk
+        ? `آخرین نرخ ${toman(option?.rate_toman || 0)}`
+        : "قابل انتخاب؛ نرخ هنگام صدور گرفته می‌شود"
+      : "در تنظیمات فعال نیست";
+    health.dataset.state = usable ? (rateOk ? "ok" : "warning") : "error";
   });
   if (!enabled) {
     networkInput.value = "";
@@ -3584,16 +3585,23 @@ function drawCryptoOptions(payload) {
     return;
   }
   const current = String(networkInput.value || "").toUpperCase();
-  const selected = healthy.has(current) ? current : ([...healthy][0] || "");
+  const selected = available.has(current) ? current : ([...available][0] || "");
   selectCryptoNetwork(selected, { haptic: false });
   const validity = getEl("cryptoInvoiceValidity");
   if (validity) validity.textContent = `${toFaDigits(payload.invoice_expire_minutes || 15)} دقیقه`;
   const daily = getEl("cryptoDailyLimit");
   if (daily) daily.textContent = toman(payload.daily_user_max_toman || 0);
   if (!selected) {
-    setHint("cryptoNetworkHint", "در حال حاضر هیچ شبکه سالمی برای ساخت فاکتور وجود ندارد.", "error");
+    setHint("cryptoNetworkHint", "در حال حاضر هیچ شبکه‌ای در تنظیمات رمزارز فعال نیست.", "error");
   } else {
-    setHint("cryptoNetworkHint", "سلامت نرخ و شبکه پیش از ساخت فاکتور بررسی شد.", "success");
+    const selectedOption = cryptoOption(selected);
+    setHint(
+      "cryptoNetworkHint",
+      selectedOption?.healthy
+        ? "آخرین بررسی نرخ موفق بود. نرخ نهایی هنگام صدور فاکتور دوباره گرفته می‌شود."
+        : "شبکه قابل انتخاب است؛ نرخ لحظه‌ای هنگام صدور فاکتور گرفته می‌شود.",
+      selectedOption?.healthy ? "success" : "pending"
+    );
   }
 }
 
@@ -3620,8 +3628,8 @@ function selectCryptoNetwork(network, { haptic = true } = {}) {
       "cryptoNetworkHint",
       option.healthy
         ? `شبکه آماده است؛ نرخ در ${rateTime} بررسی شد.`
-        : String(option.unavailable_reason || "این شبکه موقتاً در دسترس نیست."),
-      option.healthy ? "success" : "error"
+        : "شبکه انتخاب شد؛ نرخ لحظه‌ای هنگام صدور فاکتور گرفته می‌شود.",
+      option.healthy ? "success" : "pending"
     );
   }
   if (haptic) triggerLightHaptic("success");
@@ -4299,8 +4307,8 @@ async function createCryptoInvoice() {
   if (!amount_toman) throw new Error("مبلغ شارژ را وارد کنید.");
   if (!network) throw new Error("شبکه پرداخت را انتخاب کنید.");
   const option = cryptoOption(network);
-  if (!option?.healthy) {
-    throw new Error(option?.unavailable_reason || "شبکه انتخاب‌شده موقتاً آماده پرداخت نیست.");
+  if (!option) {
+    throw new Error("شبکه انتخاب‌شده در تنظیمات پرداخت فعال نیست.");
   }
   setHint("cryptoSubmitHint", "در حال دریافت نرخ لحظه‌ای و صدور فاکتور...");
   try {
