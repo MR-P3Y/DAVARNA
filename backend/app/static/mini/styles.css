@@ -5774,6 +5774,7 @@ html[data-theme="light"] #withdrawProofModal .withdraw-proof-actions {
 
 .admin-winner-dialog {
   width: min(440px, 100%);
+  max-height: min(86vh, 760px);
   color: var(--text);
   background: var(--glass);
   border: 1px solid var(--glass-border);
@@ -5782,6 +5783,9 @@ html[data-theme="light"] #withdrawProofModal .withdraw-proof-actions {
   padding: 18px;
   position: relative;
   direction: rtl;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 html[data-theme="light"] .admin-winner-modal {
@@ -5801,6 +5805,8 @@ html[data-theme="light"] .admin-winner-dialog {
 .admin-winner-body {
   display: grid;
   gap: 12px;
+  overflow: auto;
+  padding-inline-end: 2px;
 }
 
 .admin-winner-summary {
@@ -5862,6 +5868,7 @@ html[data-theme="light"] .admin-winner-row {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 14px;
+  flex: 0 0 auto;
 }
 
 .admin-winner-card-panel {
