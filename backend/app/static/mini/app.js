@@ -7,6 +7,7 @@ const state = {
   selectedGameId: null,
     adminWithdrawWalletStatus: new Map(),
   lastEventId: 0,
+  liveEventCursorByGame: {},
   pollTimer: null,
   miniSocket: null,
   miniSocketReconnectTimer: null,
@@ -40,6 +41,8 @@ const state = {
   currentUserId: 0,
   lastWinnerEventId: 0,
   lastWinnerModalKey: "",
+  userWinnerNoticeSeen: new Set(),
+  userWinnerSeenStorageKey: "",
   gameSnapshots: new Map(),
   myCardsByGame: new Map(),
   walletTxs: [],
@@ -1630,6 +1633,68 @@ function normalizeIntList(values) {
   return [...new Set(values.map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0))];
 }
 
+function liveEventCursorKnown(gameId) {
+  const gid = String(Number(gameId || 0));
+  return gid !== "0" && Object.prototype.hasOwnProperty.call(state.liveEventCursorByGame || {}, gid);
+}
+
+function getLiveEventCursor(gameId) {
+  const gid = String(Number(gameId || 0));
+  return Number((state.liveEventCursorByGame || {})[gid] || 0);
+}
+
+function markLiveEventCursor(gameId, eventId) {
+  const gid = Number(gameId || 0);
+  const eid = Number(eventId || 0);
+  if (!gid) return;
+  state.liveEventCursorByGame[String(gid)] = Math.max(getLiveEventCursor(gid), Number.isFinite(eid) ? eid : 0);
+  state.lastEventId = Math.max(Number(state.lastEventId || 0), getLiveEventCursor(gid));
+}
+
+function userWinnerSeenStorageKey() {
+  const uid = Number(state.currentUserId || 0);
+  return `davarna_user_winner_seen_v1:${uid > 0 ? uid : "anon"}`;
+}
+
+function ensureUserWinnerSeenLoaded() {
+  const storageKey = userWinnerSeenStorageKey();
+  if (state.userWinnerSeenStorageKey === storageKey) return;
+  state.userWinnerSeenStorageKey = storageKey;
+  state.userWinnerNoticeSeen = new Set();
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const keys = JSON.parse(raw || "[]");
+    if (Array.isArray(keys)) keys.forEach((key) => state.userWinnerNoticeSeen.add(String(key)));
+  } catch (_) {}
+}
+
+function winnerEventSeenKey(event) {
+  const payload = event?.payload || {};
+  const kind = String(event?.kind || "").toUpperCase();
+  const gameId = Number(event?.game_id || state.selectedGameId || 0);
+  const eventId = Number(event?.id || event?.event_id || 0);
+  if (eventId > 0) return `${kind}:${gameId}:${eventId}`;
+  return `${kind}:${gameId}:${payload.call_number || ""}:${normalizeIntList(payload.winner_user_ids || []).join("-")}:${normalizeIntList(payload.winner_card_ids || []).join("-")}`;
+}
+
+function hasSeenWinnerEvent(event) {
+  const key = winnerEventSeenKey(event);
+  if (!key) return false;
+  ensureUserWinnerSeenLoaded();
+  return state.userWinnerNoticeSeen.has(key);
+}
+
+function rememberWinnerEventSeen(event) {
+  const key = winnerEventSeenKey(event);
+  if (!key) return;
+  ensureUserWinnerSeenLoaded();
+  state.userWinnerNoticeSeen.add(key);
+  try {
+    const keys = Array.from(state.userWinnerNoticeSeen).slice(-100);
+    localStorage.setItem(state.userWinnerSeenStorageKey, JSON.stringify(keys));
+  } catch (_) {}
+}
+
 function extractWinnerUserIds(payload) {
   if (!payload || typeof payload !== "object") return [];
   const out = [];
@@ -1666,8 +1731,8 @@ function resolveWinnerAmount(payload) {
   const myId = Number(state.currentUserId || 0);
   if (myId > 0) {
     const users = normalizeIntList(payload?.winner_user_ids || []);
-    const amounts = Array.isArray(payload?.amount_by_card)
-      ? payload.amount_by_card.map((x) => Number(x || 0))
+    const amounts = Array.isArray(payload?.amounts_by_card)
+      ? payload.amounts_by_card.map((x) => Number(x || 0))
       : [];
     if (users.length && amounts.length) {
       let mine = 0;
@@ -1751,9 +1816,11 @@ function openWinnerModal(event) {
 
 function pushWinnerNotice(event) {
   if (!event || !isMyWinnerEvent(event)) return;
+  if (hasSeenWinnerEvent(event)) return;
   const eventId = Number(event.id || 0);
   if (eventId > 0 && eventId <= Number(state.lastWinnerEventId || 0)) return;
   if (eventId > 0) state.lastWinnerEventId = eventId;
+  rememberWinnerEventSeen(event);
   setBadge("success", buildWinnerNoticeText(event));
   state.userFlags.recentWinner = true;
   updateHeaderStatus();
@@ -1897,7 +1964,7 @@ function updateBuyActionState({ statusKey, myCardsCount }) {
   }
 }
 
-function renderLiveEvents(events) {
+function renderLiveEvents(events, { notifyFresh = false, notifyAfterId = 0 } = {}) {
   const evRoot = getEl("liveEvents");
   if (!evRoot) return;
   const list = Array.isArray(events) ? events.slice(-LIVE_EVENTS_LIMIT) : [];
@@ -1918,10 +1985,17 @@ function renderLiveEvents(events) {
         })
         .join("")
     : '<div class="empty">هنوز رویدادی ثبت نشده است.</div>';
-  list.forEach((e) => { pushWinnerNotice(e); pushAdminWinnerNotice(e); });
+  if (notifyFresh) {
+    list
+      .filter((e) => Number(e?.id || 0) > Number(notifyAfterId || 0))
+      .forEach((e) => {
+        pushWinnerNotice(e);
+        pushAdminWinnerNotice(e);
+      });
+  }
 }
 
-function renderLive(snapshot) {
+function renderLive(snapshot, options = {}) {
   const stateBox = getEl("liveState");
   if (!stateBox) return;
 
@@ -1979,7 +2053,10 @@ function renderLive(snapshot) {
     statusKey: String(st.status || game.status || "").toUpperCase(),
     myCardsCount: Number(st.my_cards_count || 0),
   });
-  renderLiveEvents(snapshot.recent_events || []);
+  renderLiveEvents(snapshot.recent_events || [], {
+    notifyFresh: Boolean(options.notifyFresh),
+    notifyAfterId: Number(options.notifyAfterId || 0),
+  });
 }
 
 function pickAutoLiveGameId(gameItems) {
@@ -1993,14 +2070,17 @@ function pickAutoLiveGameId(gameItems) {
   return lobby ? Number(lobby.id || 0) : 0;
 }
 
-function renderLiveSnapshot(snapshot, gameId) {
+function renderLiveSnapshot(snapshot, gameId, options = {}) {
   const gid = Number(snapshot?.game?.id || gameId || 0);
   if (!gid) return;
+  const previousCursor = Number(options.notifyAfterId ?? getLiveEventCursor(gid));
+  const canNotify = Boolean(options.notifyFresh) && liveEventCursorKnown(gid);
+  const lastEventId = Number(snapshot?.last_event_id || 0);
   state.selectedGameId = gid;
-  state.lastEventId = Math.max(Number(state.lastEventId || 0), Number(snapshot?.last_event_id || 0));
   setVal("buyQtyInput", "1");
-  renderLive(snapshot);
-  startEventPolling();
+  renderLive(snapshot, { notifyFresh: canNotify, notifyAfterId: previousCursor });
+  markLiveEventCursor(gid, lastEventId);
+  if (options.startPolling !== false) startEventPolling();
 }
 
 async function syncAutoLiveGame(gameItems) {
@@ -2021,9 +2101,14 @@ async function syncAutoLiveGame(gameItems) {
 }
 
 async function openLiveGame(gameId, options = {}) {
-  state.selectedGameId = Number(gameId);
-  const snapshot = await apiFetch(`/mini-api/games/${gameId}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`);
-  renderLiveSnapshot(snapshot, gameId);
+  const gid = Number(gameId);
+  state.selectedGameId = gid;
+  const previousCursor = Number(options.notifyAfterId ?? getLiveEventCursor(gid));
+  const snapshot = await apiFetch(`/mini-api/games/${gid}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`);
+  renderLiveSnapshot(snapshot, gid, {
+    notifyFresh: Boolean(options.notifyFresh),
+    notifyAfterId: previousCursor,
+  });
   hydrateAdminCallPanelFromSnapshot(gameId, snapshot);
   if (options.announce !== false) setHint("liveActionHint", `بازی #${gameId} انتخاب شد.`, "success");
 }
@@ -2173,9 +2258,12 @@ function handleMiniSocketMessage(event) {
     if (!gid || Number(state.selectedGameId || 0) !== gid) return;
     const snapshot = payload.snapshot;
     if (!snapshot) return;
-    state.gameSnapshots.set(gid, snapshot);
-    state.lastEventId = Math.max(Number(state.lastEventId || 0), Number(snapshot.last_event_id || 0));
-    renderLive(snapshot);
+    const previousCursor = getLiveEventCursor(gid);
+    renderLiveSnapshot(snapshot, gid, {
+      notifyFresh: true,
+      notifyAfterId: previousCursor,
+      startPolling: false,
+    });
     return;
   }
   if (type === "finance_status") {
@@ -2242,18 +2330,22 @@ function startEventPolling() {
   }
   state.pollTimer = setInterval(async () => {
     try {
+      const gid = Number(state.selectedGameId || 0);
+      const previousCursor = getLiveEventCursor(gid);
       const events = await apiFetch(
-        `/mini-api/games/${state.selectedGameId}/events?after_id=${state.lastEventId}&limit=${LIVE_EVENTS_LIMIT}`
+        `/mini-api/games/${gid}/events?after_id=${previousCursor}&limit=${LIVE_EVENTS_LIMIT}`
       );
       if (events?.length) {
-        state.lastEventId = Number(events[events.length - 1].id || state.lastEventId);
         const calledEvent = events.find((e) => String(e?.kind || "").toUpperCase() === "NUMBER_CALLED");
         if (calledEvent) {
           playNumberFeedback();
         }
-        const snap = await apiFetch(`/mini-api/games/${state.selectedGameId}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`);
-        state.lastEventId = Math.max(Number(state.lastEventId || 0), Number(snap.last_event_id || 0));
-        renderLive(snap);
+        const snap = await apiFetch(`/mini-api/games/${gid}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`);
+        renderLiveSnapshot(snap, gid, {
+          notifyFresh: true,
+          notifyAfterId: previousCursor,
+          startPolling: false,
+        });
       }
     } catch (_) {}
   }, 1200);
@@ -2278,9 +2370,14 @@ async function refreshAutoTick() {
   await Promise.allSettled(tasks);
   if (state.selectedGameId && !isMiniSocketOpen()) {
     try {
-      const snap = await apiFetch(`/mini-api/games/${state.selectedGameId}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`);
-      state.lastEventId = Math.max(Number(state.lastEventId || 0), Number(snap?.last_event_id || 0));
-      renderLive(snap);
+      const gid = Number(state.selectedGameId || 0);
+      const previousCursor = getLiveEventCursor(gid);
+      const snap = await apiFetch(`/mini-api/games/${gid}/snapshot?events_limit=${LIVE_EVENTS_LIMIT}`);
+      renderLiveSnapshot(snap, gid, {
+        notifyFresh: liveEventCursorKnown(gid),
+        notifyAfterId: previousCursor,
+        startPolling: false,
+      });
     } catch (_) {}
   }
 }
@@ -2750,6 +2847,79 @@ async function openHistoryModalForGame(gameId, { cardId = 0, source = "history" 
     renderCardsPullHint(msg, "error");
   }
 }
+
+async function openAdminWinnerCardModal(gameId, cardId) {
+  const modal = getEl("historyModal");
+  const titleEl = getEl("historyModalTitle");
+  const metaEl = getEl("historyModalMeta");
+  const bodyEl = getEl("historyModalBody");
+  if (!modal || !titleEl || !metaEl || !bodyEl) return;
+
+  const gid = Number(gameId || 0);
+  const cid = Number(cardId || 0);
+  if (!gid || !cid) {
+    setAdminLocalHint("adminActionHint", "شناسه کارت برنده برای نمایش موجود نیست.", "error");
+    return;
+  }
+
+  titleEl.textContent = `کارت برنده #${cid}`;
+  metaEl.textContent = `بازی #${gid}`;
+  bodyEl.innerHTML = '<div class="empty">در حال بارگذاری کارت برنده...</div>';
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+
+  try {
+    const [snapshot, card] = await Promise.all([
+      apiFetch(`/mini-api/games/${gid}/snapshot?events_limit=1`),
+      apiFetch(`/mini-api/admin/games/${gid}/cards/${cid}`),
+    ]);
+    const st = snapshot?.state || {};
+    const calledNumbers = Array.isArray(st.called_numbers)
+      ? st.called_numbers.map((x) => Number(x)).filter((x) => Number.isFinite(x))
+      : [];
+    const calledSet = new Set(calledNumbers);
+    const rowWinnerSet = new Set((st.row_winner_card_ids || []).map((x) => Number(x)));
+    const colWinnerSet = new Set((st.col_winner_card_ids || []).map((x) => Number(x)));
+    const nums = Array.isArray(card?.numbers) ? card.numbers : [];
+    const isRowWinner = rowWinnerSet.has(Number(cid));
+    const isColWinner = colWinnerSet.has(Number(cid));
+    const winnerCells = calcWinnerCellIndices(nums, calledSet, { row: isRowWinner, col: isColWinner });
+    const winnerLabel = winnerKindLabelByFlags({ row: isRowWinner, col: isColWinner }) || "کارت برنده";
+    const user = card?.user || {};
+    const username = String(user?.username || "").trim();
+    const displayName = String(user?.display_name || "").trim();
+    const userLabel = displayName || (username ? `@${username}` : `کاربر #${user?.user_id || "-"}`);
+
+    metaEl.textContent = `بازی #${gid} | ${winnerLabel} | ${userLabel}`;
+    bodyEl.innerHTML = `
+      <div class="history-modal-head history-modal-head-ux21">
+        آخرین عدد: <strong>${safeText(st.last_number ?? "-")}</strong> |
+        اعداد اعلام‌شده: <strong>${safeText(calledNumbers.length)}</strong>
+      </div>
+      <div class="history-modal-grid history-modal-grid-ux21">
+        <div class="history-modal-card-item history-modal-card-item-ux21">
+          <div class="card-pro-head">
+            <span class="card-id-stack"><strong>کارت #${safeText(cid)}</strong><em>بازی #${safeText(gid)}</em></span>
+            <span>${safeText(formatFaDateTime(card?.created_at))}</span>
+          </div>
+          <span class="winner-kind-pill">${safeText(winnerLabel)}</span>
+          <div class="history-modal-result history-modal-result-ux21">
+            بازیکن: ${safeText(userLabel)}
+            ${user?.tg_user_id ? ` | تلگرام: ${safeText(user.tg_user_id)}` : ""}
+          </div>
+          <div class="mini-card-grid">${buildCardGrid(nums, calledSet, new Set(), winnerCells)}</div>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    const msg = localizeApiError(err?.message || err || "خطای بارگذاری کارت برنده");
+    titleEl.textContent = `کارت برنده #${cid}`;
+    metaEl.textContent = "بارگذاری ناموفق";
+    bodyEl.innerHTML = `<div class="empty">کارت برنده بارگذاری نشد. ${safeText(msg)}</div>`;
+    setAdminLocalHint("adminActionHint", msg, "error");
+  }
+}
+
 function groupCardsByGame(items) {
   const out = new Map();
   for (const item of items || []) {
@@ -5913,6 +6083,26 @@ function markAdminLastNumberFresh() {
 
 // ADMIN_WINNER_POPUP_V6_3_START
 const adminWinnerNoticeSeen = new Set();
+const ADMIN_WINNER_SEEN_STORAGE_KEY = "davarna_admin_winner_seen_v1";
+
+function loadAdminWinnerSeenKeys() {
+  try {
+    const raw = localStorage.getItem(ADMIN_WINNER_SEEN_STORAGE_KEY);
+    const keys = JSON.parse(raw || "[]");
+    if (Array.isArray(keys)) keys.forEach((key) => adminWinnerNoticeSeen.add(String(key)));
+  } catch (_) {}
+}
+
+function rememberAdminWinnerSeenKey(key) {
+  if (!key) return;
+  adminWinnerNoticeSeen.add(String(key));
+  try {
+    const keys = Array.from(adminWinnerNoticeSeen).slice(-80);
+    localStorage.setItem(ADMIN_WINNER_SEEN_STORAGE_KEY, JSON.stringify(keys));
+  } catch (_) {}
+}
+
+loadAdminWinnerSeenKeys();
 
 function adminWinnerEventKey(event) {
   const payload = event?.payload || {};
@@ -5994,7 +6184,8 @@ function ensureAdminWinnerModal() {
       <div id="adminWinnerModalBody" class="admin-winner-body"></div>
       <div class="admin-winner-actions">
         <button class="small-btn" type="button" data-admin-winner-action="copy">کپی مشخصات</button>
-        <button class="small-btn primary" type="button" data-admin-winner-action="open-game">مشاهده بازی</button>
+        <button class="small-btn primary" type="button" data-admin-winner-action="open-card">مشاهده کارت</button>
+        <button class="small-btn" type="button" data-admin-winner-action="open-game">مشاهده بازی</button>
         <button class="small-btn" type="button" data-admin-winner-action="close">بستن</button>
       </div>
     </div>`;
@@ -6031,6 +6222,18 @@ function ensureAdminWinnerModal() {
       switchToView("games");
       setAdminSelectedGame(gid);
       openLiveGame(gid, { announce: false }).catch((err) => setAdminLocalError("adminActionHint", err));
+      return;
+    }
+
+    if (action === "open-card") {
+      const gid = Number(modal.dataset.gameId || 0);
+      const cardId = Number(btn.getAttribute("data-card-id") || modal.dataset.cardId || 0);
+      closeAdminWinnerModal();
+      if (!gid || !cardId) {
+        setAdminLocalHint("adminActionHint", "شناسه کارت برنده برای نمایش موجود نیست.", "error");
+        return;
+      }
+      openAdminWinnerCardModal(gid, cardId).catch((err) => setAdminLocalError("adminActionHint", err));
     }
   });
 
@@ -6045,7 +6248,7 @@ function showAdminWinnerPopup(event) {
 
   const key = adminWinnerEventKey(event);
   if (!key || adminWinnerNoticeSeen.has(key)) return;
-  adminWinnerNoticeSeen.add(key);
+  rememberAdminWinnerSeenKey(key);
 
   const payload = event?.payload || {};
   const gameId = Number(event?.game_id || state.selectedGameId || state.admin?.selectedGameId || 0);
@@ -6053,15 +6256,23 @@ function showAdminWinnerPopup(event) {
   const { total } = adminWinnerAmountParts(payload);
   const winnerUsers = adminWinnerUsersFromPayload(payload);
   const kindLabel = winnerKindLabelByReason(kind);
+  const firstWinnerCardId = Number(
+    winnerUsers.find((user) => Number(user?.cardId || 0) > 0)?.cardId ||
+      normalizeIntList(payload?.winner_card_ids || [])[0] ||
+      0
+  );
   const winnerRows = winnerUsers.length
     ? winnerUsers
         .map((user) => {
           const label = adminWinnerUserLabel(user);
           const userId = Number(user?.userId || 0);
           const tgUserId = Number(user?.tgUserId || 0);
-          const cardId = Number(user?.cardId || 0) || "-";
+          const cardId = Number(user?.cardId || 0);
           const amount = Number(user?.amount || 0);
-          return `<div class="admin-winner-row"><strong>بازیکن: ${safeText(label)}</strong><span>شناسه: ${safeText(userId || "-")}</span>${tgUserId ? `<span>تلگرام: ${safeText(tgUserId)}</span>` : ""}<span>کارت: ${safeText(cardId)}</span>${amount ? `<span>سهم: ${safeText(toman(amount))}</span>` : ""}</div>`;
+          const cardButton = cardId
+            ? `<button class="admin-winner-card-btn" type="button" data-admin-winner-action="open-card" data-card-id="${cardId}">مشاهده کارت</button>`
+            : "";
+          return `<div class="admin-winner-row"><strong>بازیکن: ${safeText(label)}</strong><span>شناسه: ${safeText(userId || "-")}</span>${tgUserId ? `<span>تلگرام: ${safeText(tgUserId)}</span>` : ""}<span>کارت: ${safeText(cardId || "-")}</span>${amount ? `<span>سهم: ${safeText(toman(amount))}</span>` : ""}${cardButton}</div>`;
         })
         .join("")
     : '<div class="admin-winner-row">مشخصات کاربر در payload موجود نیست.</div>';
@@ -6080,6 +6291,7 @@ function showAdminWinnerPopup(event) {
   }
 
   modal.dataset.gameId = String(gameId || "");
+  modal.dataset.cardId = String(firstWinnerCardId || "");
   const winnerCopyLines = winnerUsers.length
     ? winnerUsers.map((user, idx) => {
         const parts = [
@@ -6127,6 +6339,13 @@ async function adminCallNumber() {
   }
 
   setAdminLocalHint("adminCallActionHint", "\u062f\u0631 \u062d\u0627\u0644 \u062b\u0628\u062a \u0639\u062f\u062f...");
+  if (!liveEventCursorKnown(gid)) {
+    try {
+      const currentSnap = await apiFetch(`/mini-api/games/${gid}/snapshot?events_limit=1`);
+      markLiveEventCursor(gid, Number(currentSnap?.last_event_id || 0));
+    } catch (_) {}
+  }
+  const previousCursor = getLiveEventCursor(gid);
   await apiFetch(`/mini-api/admin/games/${gid}/call`, {
     method: "POST",
     body: { number, idempotency_key: idem("mini_admin_call") },
@@ -6137,7 +6356,11 @@ async function adminCallNumber() {
   focusAdminCallNumberInput();
   renderAdminCallQuickPanel({ fresh: true });
   setAdminLocalHint("adminCallActionHint", `\u0639\u062f\u062f ${number} \u0628\u0631\u0627\u06cc \u0628\u0627\u0632\u06cc #${gid} \u062b\u0628\u062a \u0634\u062f.`, "success");
-  await Promise.allSettled([refreshAdminGames(), openLiveGame(gid), refreshCards({ silent: true })]);
+  await Promise.allSettled([
+    refreshAdminGames(),
+    openLiveGame(gid, { notifyFresh: true, notifyAfterId: previousCursor }),
+    refreshCards({ silent: true }),
+  ]);
 }
 
 

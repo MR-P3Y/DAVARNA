@@ -2907,6 +2907,7 @@ def mini_admin_start_game(
         game_id=int(game_id),
         admin_user_id=int(ident.user_id),
         idempotency_key=str(payload.idempotency_key),
+        can_manage_any=bool(ident.is_super_admin),
     )
     AdminAuditService.record(
         db,
@@ -2946,6 +2947,7 @@ def mini_admin_call_number(
         number=int(payload.number),
         admin_user_id=int(ident.user_id),
         idempotency_key=str(payload.idempotency_key),
+        can_manage_any=bool(ident.is_super_admin),
     )
     AdminAuditService.record(
         db,
@@ -2982,6 +2984,7 @@ def mini_admin_undo_call(
         game_id=int(game_id),
         admin_user_id=int(ident.user_id),
         idempotency_key=str(payload.idempotency_key),
+        can_manage_any=bool(ident.is_super_admin),
     )
     db.commit()
     return {"ok": True, "result": out}
@@ -3002,6 +3005,7 @@ def mini_admin_close_lobby(
         admin_user_id=int(ident.user_id),
         idempotency_key=str(payload.idempotency_key),
         cancel_reason=cancel_reason,
+        can_manage_any=bool(ident.is_super_admin),
     )
     notify_stats = {
         "notified_ok": 0,
@@ -3040,6 +3044,50 @@ def mini_admin_get_live_link(
         "url": url,
         "updated_at": updated_at,
         "participants_count": int(participants_count or 0),
+    }
+
+
+@router.get("/admin/games/{game_id}/cards/{card_id}")
+def mini_admin_get_game_card(
+    game_id: int,
+    card_id: int,
+    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
+    db: Session = Depends(get_db),
+):
+    game = _mini_require_game_manage_access(db, int(game_id), ident)
+    row = db.execute(
+        select(GameCard, User)
+        .join(User, User.id == GameCard.user_id)
+        .where(
+            GameCard.game_id == int(game_id),
+            GameCard.id == int(card_id),
+        )
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="کارت موردنظر در این بازی پیدا نشد.")
+
+    card, user = row
+    display_name = " ".join(
+        part
+        for part in [
+            str(getattr(user, "first_name", "") or "").strip(),
+            str(getattr(user, "last_name", "") or "").strip(),
+        ]
+        if part
+    )
+    return {
+        "game_id": int(game.id),
+        "game_status": str(game.status),
+        "card_id": int(card.id),
+        "fingerprint": str(card.fingerprint),
+        "numbers": _numbers_from_json(card.numbers_json),
+        "created_at": str(card.created_at) if card.created_at else None,
+        "user": {
+            "user_id": int(user.id),
+            "tg_user_id": int(user.tg_user_id),
+            "username": str(user.username) if user.username else None,
+            "display_name": display_name or None,
+        },
     }
 
 
