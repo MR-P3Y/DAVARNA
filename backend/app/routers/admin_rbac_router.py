@@ -17,7 +17,7 @@ from app.services.admin_audit_service import AdminAuditService
 
 router = APIRouter(prefix="/admin/rbac", tags=["admin-rbac"])
 
-ADMIN_ROLE_NAMES = ("ADMIN", "SUPER_ADMIN")
+ADMIN_ROLE_NAMES = ("ADMIN", "SUPER_ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN")
 
 
 class AdminAccountOut(BaseModel):
@@ -36,12 +36,12 @@ class AdminAccountListOut(BaseModel):
 
 class GrantAdminIn(BaseModel):
     tg_user_id: int = Field(gt=0)
-    role: Literal["ADMIN", "SUPER_ADMIN"] = "ADMIN"
+    role: Literal["ADMIN", "SUPER_ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN"] = "ADMIN"
 
 
 class RevokeAdminIn(BaseModel):
     tg_user_id: int = Field(gt=0)
-    role: Literal["ADMIN", "SUPER_ADMIN", "ALL"] = "ALL"
+    role: Literal["ADMIN", "SUPER_ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN", "ALL"] = "ALL"
 
 
 def _require_super_admin(identity: AdminIdentity = Depends(require_admin_any)) -> AdminIdentity:
@@ -61,7 +61,10 @@ def _role_id_map(db: Session) -> dict[str, int]:
     out = {str(name): int(role_id) for name, role_id in rows}
     for needed in ADMIN_ROLE_NAMES:
         if needed not in out:
-            raise HTTPException(status_code=500, detail=f"role '{needed}' is not seeded")
+            role = Role(name=needed)
+            db.add(role)
+            db.flush()
+            out[needed] = int(role.id)
     return out
 
 
@@ -222,7 +225,7 @@ def revoke_admin_account(
 
     target_role_ids: list[int]
     if payload.role == "ALL":
-        target_role_ids = [int(role_ids["ADMIN"]), int(role_ids["SUPER_ADMIN"])]
+        target_role_ids = [int(role_id) for role_id in role_ids.values()]
     else:
         target_role_ids = [int(role_ids[payload.role])]
 

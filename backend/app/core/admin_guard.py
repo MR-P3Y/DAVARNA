@@ -1,4 +1,4 @@
-﻿from enum import Enum
+from enum import Enum
 from typing import Optional
 from fastapi import Header, HTTPException, Depends
 from sqlalchemy import select
@@ -120,9 +120,11 @@ def require_admin_any(
         .where(UserRole.user_id == user_id)
     ).scalars().all()
 
-    if "SUPER_ADMIN" in role_names:
+    normalized_roles = {str(r).upper() for r in role_names}
+
+    if "SUPER_ADMIN" in normalized_roles:
         return AdminIdentity(scope=AdminScope.SUPER_ADMIN, token="TG", user_id=user_id)
-    if "ADMIN" in role_names:
+    if normalized_roles.intersection({"ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN"}):
         return AdminIdentity(scope=AdminScope.ADMIN, token="TG", user_id=user_id)
 
     raise HTTPException(status_code=403, detail=FORBIDDEN_DETAIL)

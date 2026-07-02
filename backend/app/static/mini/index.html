@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>مینی‌اپ دبرنای طوفان</title>
-    <link rel="stylesheet" href="./styles.css?v=20260702uxhubv70" />
+    <link rel="stylesheet" href="./styles.css?v=20260702adminopsv71" />
   </head>
   <body>
     <div id="appSplash" class="app-splash" aria-label="در حال آماده‌سازی مینی‌اپ">
@@ -435,6 +435,14 @@
               <p id="adminGuideText">ایجاد بازی، مدیریت عملیات و بررسی واریز/برداشت از همین بخش انجام می‌شود.</p>
             </div>
 
+            <div class="cards-box admin-ops-dashboard mt-12">
+              <div class="cards-box-head">
+                <h3>داشبورد عملیات</h3>
+                <button id="adminOpsRefreshBtn" class="small-btn" type="button">به‌روزرسانی</button>
+              </div>
+              <div id="adminOpsDashboard" class="admin-ops-grid"></div>
+            </div>
+
             <div class="cards-box">
               <div class="cards-box-head">
                 <h3 id="adminCreateTitle">ایجاد بازی جدید</h3>
@@ -541,6 +549,36 @@
             <div class="admin-accordion mt-12">
               <details class="accordion-item" open>
                 <summary class="accordion-head">
+                  <h3>صف تسویه برنده‌ها</h3>
+                  <span class="accordion-icon">▾</span>
+                </summary>
+                <div class="accordion-body">
+                  <div id="adminWinnerSettlementsList" class="cards-history-scroll"></div>
+                </div>
+              </details>
+
+              <details class="accordion-item">
+                <summary class="accordion-head">
+                  <h3>هشدارهای ریسک</h3>
+                  <span class="accordion-icon">▾</span>
+                </summary>
+                <div class="accordion-body">
+                  <div id="adminRiskAlertsList" class="cards-history-scroll"></div>
+                </div>
+              </details>
+
+              <details class="accordion-item">
+                <summary class="accordion-head">
+                  <h3>لاگ عملیات ادمین</h3>
+                  <span class="accordion-icon">▾</span>
+                </summary>
+                <div class="accordion-body">
+                  <div id="adminAuditLogsList" class="cards-history-scroll"></div>
+                </div>
+              </details>
+
+              <details class="accordion-item" open>
+                <summary class="accordion-head">
                   <h3 id="adminDepositsTitle">واریزی‌های در انتظار</h3>
                   <span class="accordion-icon">▾</span>
                 </summary>
@@ -638,6 +676,8 @@
                     <input id="superAdminTgUserInput" type="number" min="1" />
                     <label id="superAdminRoleLabel" for="superAdminRoleSelect">نقش</label>
                     <select id="superAdminRoleSelect">
+                      <option value="GAME_OPERATOR">اپراتور بازی</option>
+                      <option value="FINANCE_ADMIN">ادمین مالی</option>
                       <option value="ADMIN">ادمین</option>
                       <option value="SUPER_ADMIN">سوپرادمین</option>
                     </select>
@@ -800,6 +840,6 @@
     <div id="miniToast" class="mini-toast hidden" role="status" aria-live="polite"></div>
 
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="./app.js?v=20260702uxhubv70" type="module"></script>
+    <script src="./app.js?v=20260702adminopsv71" type="module"></script>
   </body>
 </html>

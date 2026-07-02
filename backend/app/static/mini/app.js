@@ -228,6 +228,33 @@ const EVENT_KIND_LABELS = {
   WINNER_DECLARED: "اعلام برنده",
 };
 
+const ADMIN_ROLE_LABELS = {
+  GAME_OPERATOR: "اپراتور بازی",
+  FINANCE_ADMIN: "ادمین مالی",
+  ADMIN: "ادمین",
+  SUPER_ADMIN: "سوپرادمین",
+};
+
+const ADMIN_AUDIT_ACTION_LABELS = {
+  "game.create": "ایجاد بازی",
+  "game.start": "شروع بازی",
+  "game.call": "اعلام عدد",
+  "user.restrict": "محدود کردن کاربر",
+  "user.unrestrict": "رفع محدودیت کاربر",
+  "user.wallet_adjust": "اصلاح کیف پول",
+  "settings.update": "تغییر تنظیمات",
+  "admin.grant": "اعطای نقش",
+  "admin.revoke": "حذف نقش",
+  "deposit.approve": "تایید واریز",
+  "deposit.reject": "رد واریز",
+  "crypto.deposit.approve": "تایید واریز کریپتو",
+  "crypto.deposit.reject": "رد واریز کریپتو",
+  "crypto.wallet.connected": "اتصال کیف پول کریپتو",
+  "crypto.payment.requested": "درخواست پرداخت کریپتو",
+  "risk.buy.insufficient_balance": "تلاش خرید با موجودی ناکافی",
+  "winner.settlement.mark_paid": "ثبت پرداخت برنده",
+};
+
 const ACTIVE_GAME_STATUSES = new Set(["LOBBY", "RUNNING"]);
 const CARDS_REFRESH_INTERVAL_MS = 2200;
 const GLOBAL_REFRESH_INTERVAL_MS = 12000;
@@ -2526,7 +2553,13 @@ function handleMiniSocketFinance(payload) {
   state.miniSocketFinanceKey = key;
   checkAdminFinanceNotifications({ silent: false }).catch(() => {});
   if (isAdminViewActive()) {
-    Promise.allSettled([refreshAdminDeposits(), refreshAdminWithdraws()]).catch(() => {});
+    Promise.allSettled([
+      refreshAdminOpsDashboard(),
+      refreshAdminRiskAlerts(),
+      refreshAdminDeposits(),
+      refreshAdminWithdraws(),
+      refreshAdminWinnerSettlements(),
+    ]).catch(() => {});
   }
 }
 
@@ -6013,7 +6046,7 @@ function renderSuperAdminList(payload) {
         <strong>${safeText(a.first_name || a.username || a.tg_user_id || a.user_id)}</strong>
         <div class="history-meta">
           tg_user_id: ${safeText(a.tg_user_id)}<br />
-          نقش‌ها: ${safeText((a.roles || []).join(" | "))}
+          نقش‌ها: ${safeText((a.roles || []).map(adminRoleLabel).join(" | "))}
         </div>
       </div>
     `)
@@ -6236,12 +6269,248 @@ async function refreshSuperAdminList() {
   renderSuperAdminList(out);
 }
 
+function adminRoleLabel(role) {
+  const key = String(role || "").trim().toUpperCase();
+  return ADMIN_ROLE_LABELS[key] || key || "-";
+}
+
+function adminAuditActionLabel(action) {
+  const key = String(action || "").trim();
+  return ADMIN_AUDIT_ACTION_LABELS[key] || key || "-";
+}
+
+function adminRiskSeverityLabel(severity) {
+  const key = String(severity || "").trim().toLowerCase();
+  if (key === "danger" || key === "error") return "بحرانی";
+  if (key === "warning") return "هشدار";
+  if (key === "success") return "سالم";
+  return "اطلاع";
+}
+
+function adminServiceStatusClass(service) {
+  if (service?.ok === true) return "is-ok";
+  if (service?.ok === false) return "is-bad";
+  return "is-muted";
+}
+
+function renderAdminOpsDashboard(payload) {
+  const root = getEl("adminOpsDashboard");
+  if (!root) return;
+  const counts = payload?.counts || {};
+  const services = Array.isArray(payload?.system?.services) ? payload.system.services : [];
+  const games = Array.isArray(payload?.active_games) ? payload.active_games : [];
+  const countCards = [
+    ["بازی فعال", games.length],
+    ["واریز در انتظار", counts.pending_deposits || 0],
+    ["برداشت فوری", (Number(counts.pending_withdraws || 0) + Number(counts.approved_withdraws || 0))],
+    ["کریپتو نیازمند بررسی", counts.crypto_needs_review || 0],
+    ["هشدار ریسک ۲۴ساعت", counts.risk_events_24h || 0],
+  ];
+
+  const activeGameHtml = games.length
+    ? games
+        .map((g) => `
+          <div class="admin-ops-game">
+            <strong>بازی #${safeText(g.id)} | ${safeText(statusLabel(g.status))}</strong>
+            <span>آخرین عدد: ${safeText(g.last_number ?? "-")} | اعلام: ${safeText(g.called_count || 0)}/۹۰</span>
+            <span>کارت: ${safeText(g.cards_count || 0)} | بازیکن: ${safeText(g.players_count || 0)} | جایزه: ${safeText(toman(g.prize_pool || 0))}</span>
+            <button class="small-btn admin-ops-open-game" data-game-id="${safeText(g.id)}" type="button">مشاهده بازی</button>
+          </div>
+        `)
+        .join("")
+    : '<div class="empty">بازی فعال برای مدیریت وجود ندارد.</div>';
+
+  root.innerHTML = `
+    <div class="admin-ops-counts">
+      ${countCards
+        .map(([label, value]) => `
+          <div class="admin-ops-count">
+            <span>${safeText(label)}</span>
+            <strong>${safeText(String(value || 0))}</strong>
+          </div>
+        `)
+        .join("")}
+    </div>
+    <div class="admin-ops-services">
+      ${services
+        .map((svc) => `
+          <div class="admin-service-pill ${adminServiceStatusClass(svc)}">
+            <strong>${safeText(svc.title || svc.key || "-")}</strong>
+            <span>${safeText(svc.status || "-")}</span>
+          </div>
+        `)
+        .join("")}
+    </div>
+    <div class="admin-ops-games">${activeGameHtml}</div>
+  `;
+
+  root.querySelectorAll(".admin-ops-open-game").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const gid = Number(btn.getAttribute("data-game-id") || "0");
+      if (!gid) return;
+      setAdminSelectedGame(gid);
+      switchToView("games");
+      openLiveGame(gid).catch((e) => setAdminLocalError("adminActionHint", e));
+    });
+  });
+}
+
+async function refreshAdminOpsDashboard() {
+  if (!state.admin.enabled) return;
+  const out = await apiFetch("/mini-api/admin/ops-dashboard");
+  renderAdminOpsDashboard(out);
+}
+
+function winnerSettlementReasonLabel(reason) {
+  const key = String(reason || "").toUpperCase();
+  if (key === "PRIZE_ROW") return "برد سطری(تمام)";
+  if (key === "PRIZE_COL") return "برد ستونی(تورنا)";
+  return key || "-";
+}
+
+function renderAdminWinnerSettlements(payload) {
+  const root = getEl("adminWinnerSettlementsList");
+  if (!root) return;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    root.innerHTML = '<div class="empty">فعلاً برد پرداخت‌شده یا در انتظار ثبت وجود ندارد.</div>';
+    return;
+  }
+  root.innerHTML = items
+    .map((item) => {
+      const paid = String(item.settlement_status || "") === "PAID_RECORDED";
+      const gameId = Number(item.game_id || 0);
+      const cardId = Number(item.winner_card_id || 0);
+      return `
+        <div class="history-item admin-settlement-item ${paid ? "is-paid" : ""}">
+          <strong>برد بازی #${safeText(gameId || "-")} | ${safeText(winnerSettlementReasonLabel(item.reason))}</strong>
+          <div class="history-meta">
+            برنده: ${safeText(item.display_name || item.username || item.tg_user_id || "-")}<br />
+            مبلغ: ${safeText(toman(item.amount || 0))}<br />
+            کارت برنده: ${safeText(cardId || "-")}<br />
+            وضعیت دفتر کیف پول: ${item.ledger_status === "CREDITED" ? "شارژ شده" : safeText(item.ledger_status || "-")}<br />
+            وضعیت تسویه: ${paid ? "پرداخت ثبت شده" : "در انتظار ثبت پرداخت"}<br />
+            زمان: ${safeText(formatFaDateTime(item.created_at))}
+          </div>
+          <div class="admin-item-actions">
+            ${gameId && cardId ? `<button class="small-btn admin-settlement-card-btn" data-game-id="${safeText(gameId)}" data-card-id="${safeText(cardId)}" type="button">مشاهده کارت</button>` : ""}
+            ${paid ? '<span class="meta">ثبت شده</span>' : `<button class="small-btn primary admin-settlement-paid-btn" data-id="${safeText(item.wallet_tx_id)}" type="button">ثبت پرداخت</button>`}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  root.querySelectorAll(".admin-settlement-card-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const gid = Number(btn.getAttribute("data-game-id") || "0");
+      const cid = Number(btn.getAttribute("data-card-id") || "0");
+      if (!gid || !cid) return;
+      openAdminWinnerCardModal(gid, cid).catch((e) => setAdminLocalError("adminActionHint", e));
+    });
+  });
+  root.querySelectorAll(".admin-settlement-paid-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.getAttribute("data-id") || "0");
+      if (!id) return;
+      adminMarkWinnerSettlementPaid(id).catch((e) => setAdminLocalError("adminActionHint", e));
+    });
+  });
+}
+
+async function refreshAdminWinnerSettlements() {
+  if (!state.admin.enabled) return;
+  const out = await apiFetch("/mini-api/admin/winner-settlements?limit=40");
+  renderAdminWinnerSettlements(out);
+}
+
+async function adminMarkWinnerSettlementPaid(walletTxId) {
+  const id = Number(walletTxId || 0);
+  if (!id) throw new Error("شناسه تراکنش جایزه نامعتبر است.");
+  setAdminLocalHint("adminActionHint", "در حال ثبت پرداخت برنده...");
+  await apiFetch(`/mini-api/admin/winner-settlements/${id}/mark-paid`, { method: "POST" });
+  setAdminLocalHint("adminActionHint", "پرداخت برنده در لاگ عملیاتی ثبت شد.", "success");
+  await Promise.allSettled([refreshAdminWinnerSettlements(), refreshAdminAuditLogs(), refreshAdminOpsDashboard()]);
+}
+
+function renderAdminAuditLogs(payload) {
+  const root = getEl("adminAuditLogsList");
+  if (!root) return;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    root.innerHTML = '<div class="empty">لاگ عملیاتی ثبت نشده است.</div>';
+    return;
+  }
+  root.innerHTML = items
+    .map((item) => {
+      const details = item?.details && typeof item.details === "object" ? item.details : {};
+      const summaryParts = [];
+      if (details.game_id) summaryParts.push(`بازی #${details.game_id}`);
+      if (details.number) summaryParts.push(`عدد ${details.number}`);
+      if (details.role) summaryParts.push(`نقش ${adminRoleLabel(details.role)}`);
+      if (details.amount || details.amount_toman || details.requested_amount) {
+        summaryParts.push(toman(details.amount || details.amount_toman || details.requested_amount));
+      }
+      return `
+        <div class="history-item admin-audit-item">
+          <strong>${safeText(adminAuditActionLabel(item.action))}</strong>
+          <div class="history-meta">
+            ادمین/کاربر: ${safeText(item.actor_label || item.actor_tg_user_id || item.actor_user_id || "-")}<br />
+            سطح: ${safeText(item.actor_scope || "-")}<br />
+            هدف: ${safeText(item.target_type || "-")} #${safeText(item.target_id || "-")}<br />
+            ${summaryParts.length ? `جزئیات: ${safeText(summaryParts.join(" | "))}<br />` : ""}
+            زمان: ${safeText(formatFaDateTime(item.created_at))}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+async function refreshAdminAuditLogs() {
+  if (!state.admin.enabled) return;
+  const out = await apiFetch("/mini-api/admin/audit/logs?limit=70");
+  renderAdminAuditLogs(out);
+}
+
+function renderAdminRiskAlerts(payload) {
+  const root = getEl("adminRiskAlertsList");
+  if (!root) return;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    root.innerHTML = '<div class="empty">هشدار ریسک فعالی دیده نشد.</div>';
+    return;
+  }
+  root.innerHTML = items
+    .map((item) => `
+      <div class="history-item admin-risk-item severity-${safeText(String(item.severity || "info").toLowerCase())}">
+        <strong>${safeText(item.title || "-")} <span class="admin-risk-severity">${safeText(adminRiskSeverityLabel(item.severity))}</span></strong>
+        <div class="history-meta">
+          ${safeText(item.body || "-")}<br />
+          هدف: ${safeText(item.target_type || "-")} ${item.target_id ? `#${safeText(item.target_id)}` : ""}<br />
+          زمان: ${safeText(formatFaDateTime(item.created_at))}
+        </div>
+      </div>
+    `)
+    .join("");
+}
+
+async function refreshAdminRiskAlerts() {
+  if (!state.admin.enabled) return;
+  const out = await apiFetch("/mini-api/admin/risk-alerts");
+  renderAdminRiskAlerts(out);
+}
+
 async function refreshAdminPanel(options = {}) {
   const silent = Boolean(options?.silent);
   if (!state.admin.enabled) return;
   await Promise.allSettled([
+    refreshAdminOpsDashboard(),
     refreshAdminCreateOptions(),
     refreshAdminGames(),
+    refreshAdminWinnerSettlements(),
+    refreshAdminRiskAlerts(),
+    refreshAdminAuditLogs(),
     refreshAdminDeposits(),
     refreshAdminCryptoDeposits(),
     refreshAdminWithdraws(),
@@ -7148,7 +7417,7 @@ async function superAdminGrant() {
     method: "POST",
     body: { tg_user_id: tgUserId, role },
   });
-  setHint("superAdminHint", `نقش ${role} برای ${tgUserId} ثبت شد.`, "success");
+  setHint("superAdminHint", `نقش ${adminRoleLabel(role)} برای ${tgUserId} ثبت شد.`, "success");
   await refreshSuperAdminList();
 }
 
@@ -7160,7 +7429,7 @@ async function superAdminRevoke() {
     method: "POST",
     body: { tg_user_id: tgUserId, role },
   });
-  setHint("superAdminHint", `نقش ${role} از ${tgUserId} حذف شد.`, "success");
+  setHint("superAdminHint", `نقش ${adminRoleLabel(role)} از ${tgUserId} حذف شد.`, "success");
   await refreshSuperAdminList();
 }
 
@@ -7456,6 +7725,7 @@ async function boot() {
   bind("copyDepositCardBtn", "click", () => copySelectedDepositCard().catch((e) => setLocalError("depositDestinationHint", e)));
   bind("submitWithdrawBtn", "click", () => createWithdraw().catch((e) => setLocalError("withdrawSubmitHint", e)));
   bind("refreshAdminBtn", "click", () => runManualRefresh("refreshAdminBtn", () => refreshAdminPanel()).catch(() => {}));
+  bind("adminOpsRefreshBtn", "click", () => runManualRefresh("adminOpsRefreshBtn", () => refreshAdminPanel()).catch(() => {}));
   bind("adminUsersSearchBtn", "click", () => adminUsersSearch().catch((e) => setLocalError("adminUsersHint", e)));
   bind("adminUsersRefreshBtn", "click", () => adminUsersRefreshSelected().catch((e) => setLocalError("adminUsersHint", e)));
   bind("adminUsersSearchInput", "keydown", (ev) => {

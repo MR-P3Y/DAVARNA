@@ -156,9 +156,10 @@ def _roles_for_user(db: Session, user_id: int) -> list[str]:
 
 
 def _ensure_manage_target(admin: AdminIdentity, target_roles: list[str]) -> None:
-    if "SUPER_ADMIN" in target_roles and admin.scope != AdminScope.SUPER_ADMIN:
+    normalized_roles = {str(role).upper() for role in target_roles}
+    if "SUPER_ADMIN" in normalized_roles and admin.scope != AdminScope.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="cannot manage super admin")
-    if "ADMIN" in target_roles and admin.scope != AdminScope.SUPER_ADMIN:
+    if normalized_roles.intersection({"ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN"}) and admin.scope != AdminScope.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="cannot manage admin user")
 
 

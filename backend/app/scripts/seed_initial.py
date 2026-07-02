@@ -18,7 +18,7 @@ def main():
     db = SessionLocal()
     try:
         # roles
-        for r in ["SUPER_ADMIN", "ADMIN"]:
+        for r in ["SUPER_ADMIN", "ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN"]:
             exists = db.execute(select(Role).where(Role.name == r)).scalar_one_or_none()
             if not exists:
                 db.add(Role(name=r))

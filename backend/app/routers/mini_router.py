@@ -46,6 +46,7 @@ from app.core.config import (
     USER_TOPIC_GAME_MEDIUM_ID,
 )
 from app.core.db import SessionLocal, get_db
+from app.core.redis_client import get_redis
 from app.core.mini_security import (
     enforce_events_rate_limit,
     enforce_write_rate_limit,
@@ -56,7 +57,7 @@ from app.core.mini_security import (
 )
 from app.models.finance import DepositRequest, WithdrawRequest
 from app.models.crypto import CryptoDepositRequest
-from app.models.game import Game, GameCard
+from app.models.game import Game, GameCalledNumber, GameCard, GamePurchase
 from app.models.game_event import GameEvent
 from app.models.settings import AppSetting
 from app.models.user import User
@@ -126,6 +127,7 @@ DEPOSIT_REQUEST_DESTINATION_KEY_PREFIX = "deposit_request_destination:"
 WITHDRAW_REQUEST_SOURCE_KEY_PREFIX = "withdraw_request_source:"
 WITHDRAW_PAID_PROOF_KEY_PREFIX = "withdraw_paid_proof:"
 GAME_LIVE_LINK_KEY_PREFIX = "game_live_link:"
+WINNER_SETTLEMENT_PAID_KEY_PREFIX = "winner_settlement_paid:"
 
 
 def _clean_numeric(value: object) -> str:
@@ -483,7 +485,8 @@ def _user_alias(user: User | None) -> str:
     return f"کاربر {int(user.tg_user_id)}"
 
 
-ADMIN_ROLE_NAMES: tuple[str, str] = ("ADMIN", "SUPER_ADMIN")
+ADMIN_ROLE_NAMES: tuple[str, ...] = ("ADMIN", "SUPER_ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN")
+MINI_ADMIN_ACCESS_ROLES: set[str] = {"ADMIN", "SUPER_ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN"}
 
 
 class MiniAdminIdentity:
@@ -492,7 +495,7 @@ class MiniAdminIdentity:
         self.tg_user_id = int(tg_user_id) if tg_user_id is not None else None
         self.roles = sorted({str(r).upper() for r in roles if str(r).strip()})
         self.is_super_admin = "SUPER_ADMIN" in self.roles
-        self.is_admin = self.is_super_admin or ("ADMIN" in self.roles)
+        self.is_admin = self.is_super_admin or bool(MINI_ADMIN_ACCESS_ROLES.intersection(self.roles))
         self.scope = "SUPER_ADMIN" if self.is_super_admin else ("ADMIN" if self.is_admin else "USER")
 
 
@@ -572,12 +575,12 @@ class MiniAdminWithdrawRejectIn(BaseModel):
 
 class MiniSuperGrantIn(BaseModel):
     tg_user_id: int = Field(gt=0)
-    role: Literal["ADMIN", "SUPER_ADMIN"] = "ADMIN"
+    role: Literal["ADMIN", "SUPER_ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN"] = "ADMIN"
 
 
 class MiniSuperRevokeIn(BaseModel):
     tg_user_id: int = Field(gt=0)
-    role: Literal["ADMIN", "SUPER_ADMIN", "ALL"] = "ALL"
+    role: Literal["ADMIN", "SUPER_ADMIN", "GAME_OPERATOR", "FINANCE_ADMIN", "ALL"] = "ALL"
 
 
 class MiniSuperCryptoUpdateIn(BaseModel):
@@ -1158,7 +1161,10 @@ def _mini_role_id_map(db: Session) -> dict[str, int]:
     out = {str(name): int(role_id) for name, role_id in rows}
     for needed in ADMIN_ROLE_NAMES:
         if needed not in out:
-            raise HTTPException(status_code=500, detail=f"role '{needed}' is not seeded")
+            role = Role(name=needed)
+            db.add(role)
+            db.flush()
+            out[needed] = int(role.id)
     return out
 
 
@@ -1990,13 +1996,41 @@ def buy_cards(
 ):
     require_user_id_not_restricted(db, int(user_id), "BUY")
     enforce_write_rate_limit(int(user_id))
-    purchase, _cards, prize_pool = GameService.buy_cards(
-        db=db,
-        game_id=int(game_id),
-        user_id=int(user_id),
-        qty=int(payload.qty),
-        idempotency_key=str(payload.idempotency_key),
-    )
+    try:
+        purchase, _cards, prize_pool = GameService.buy_cards(
+            db=db,
+            game_id=int(game_id),
+            user_id=int(user_id),
+            qty=int(payload.qty),
+            idempotency_key=str(payload.idempotency_key),
+        )
+    except HTTPException as exc:
+        detail = str(exc.detail or "").strip().lower()
+        if detail in {"insufficient balance", "wallet not found"}:
+            db.rollback()
+            game = db.execute(select(Game).where(Game.id == int(game_id))).scalar_one_or_none()
+            wallet_balance = db.execute(
+                select(Wallet.balance).where(Wallet.user_id == int(user_id))
+            ).scalar_one_or_none()
+            requested_amount = int(getattr(game, "card_price", 0) or 0) * int(payload.qty)
+            AdminAuditService.record_user(
+                db,
+                user_id=int(user_id),
+                action="risk.buy.insufficient_balance",
+                target_type="game",
+                target_id=int(game_id),
+                details={
+                    "game_id": int(game_id),
+                    "qty": int(payload.qty),
+                    "card_price": int(getattr(game, "card_price", 0) or 0),
+                    "requested_amount": int(requested_amount),
+                    "wallet_balance": int(wallet_balance or 0),
+                    "source": "mini_app",
+                },
+            )
+            db.commit()
+            raise HTTPException(status_code=400, detail="موجودی کیف پول برای خرید کارت کافی نیست.") from exc
+        raise
     db.commit()
     return MiniBuyOut(
         game_id=int(game_id),
@@ -2840,6 +2874,426 @@ def mini_admin_me(
         is_admin=bool(ident.is_admin),
         is_super_admin=bool(ident.is_super_admin),
     )
+
+
+def _mini_admin_user_label(user: User | None) -> str:
+    if user is None:
+        return "-"
+    username = str(user.username or "").strip()
+    if username:
+        return f"@{username}"
+    name = " ".join(
+        x
+        for x in [
+            str(user.first_name or "").strip(),
+            str(user.last_name or "").strip(),
+        ]
+        if x
+    )
+    return name or f"کاربر {int(user.tg_user_id)}"
+
+
+def _winner_settlement_key(wallet_tx_id: int) -> str:
+    return f"{WINNER_SETTLEMENT_PAID_KEY_PREFIX}{int(wallet_tx_id)}"
+
+
+def _mini_winner_card_id_for_tx(db: Session, *, game_id: int, user_id: int, reason: str) -> int | None:
+    kind = "PRIZE_ROW" if str(reason).upper() == "PRIZE_ROW" else "PRIZE_COL"
+    rows = (
+        db.execute(
+            select(GameEvent.payload_json)
+            .where(GameEvent.game_id == int(game_id), GameEvent.kind == kind)
+            .order_by(GameEvent.id.desc())
+            .limit(20)
+        )
+        .scalars()
+        .all()
+    )
+    for payload in rows:
+        if not isinstance(payload, dict):
+            continue
+        winner_users = payload.get("winner_users")
+        if isinstance(winner_users, list):
+            for item in winner_users:
+                if not isinstance(item, dict):
+                    continue
+                if _safe_int(item.get("user_id"), 0) == int(user_id):
+                    card_id = _safe_int(item.get("card_id"), 0)
+                    if card_id > 0:
+                        return int(card_id)
+        user_ids = payload.get("winner_user_ids")
+        card_ids = payload.get("winner_card_ids")
+        if isinstance(user_ids, list) and isinstance(card_ids, list):
+            for idx, raw_uid in enumerate(user_ids):
+                if _safe_int(raw_uid, 0) != int(user_id):
+                    continue
+                if idx < len(card_ids):
+                    card_id = _safe_int(card_ids[idx], 0)
+                    if card_id > 0:
+                        return int(card_id)
+    return None
+
+
+def _mini_system_health(db: Session) -> dict[str, Any]:
+    services: list[dict[str, Any]] = [
+        {"key": "backend", "title": "Backend", "ok": True, "status": "OK", "detail": "API فعال است."}
+    ]
+    try:
+        db.execute(select(func.now())).scalar_one_or_none()
+        services.append({"key": "mysql", "title": "MySQL", "ok": True, "status": "OK", "detail": "اتصال دیتابیس سالم است."})
+    except Exception as exc:
+        services.append({"key": "mysql", "title": "MySQL", "ok": False, "status": "FAIL", "detail": str(exc)[:180]})
+
+    try:
+        redis_ok = bool(get_redis().ping())
+        services.append({"key": "redis", "title": "Redis", "ok": redis_ok, "status": "OK" if redis_ok else "FAIL", "detail": "Redis پاسخ داد." if redis_ok else "Redis پاسخ نداد."})
+    except Exception as exc:
+        services.append({"key": "redis", "title": "Redis", "ok": False, "status": "FAIL", "detail": str(exc)[:180]})
+
+    services.append(
+        {
+            "key": "bot",
+            "title": "Telegram Bot",
+            "ok": None,
+            "status": "MONITORED",
+            "detail": "وضعیت bot از مانیتور سرور و Docker health بررسی می‌شود.",
+        }
+    )
+    return {"services": services, "checked_at": datetime.utcnow().isoformat(timespec="seconds")}
+
+
+@router.get("/admin/ops-dashboard")
+def mini_admin_ops_dashboard(
+    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
+    db: Session = Depends(get_db),
+):
+    game_query = select(Game).where(Game.status.in_(["LOBBY", "RUNNING"])).order_by(Game.id.desc()).limit(6)
+    if not ident.is_super_admin:
+        game_query = game_query.where(Game.admin_user_id == int(ident.user_id))
+    games = db.execute(game_query).scalars().all()
+
+    active_games: list[dict[str, Any]] = []
+    for g in games:
+        last_number = db.execute(
+            select(GameCalledNumber.number).where(GameCalledNumber.game_id == int(g.id)).order_by(GameCalledNumber.id.desc()).limit(1)
+        ).scalar_one_or_none()
+        called_count = db.execute(
+            select(func.count(GameCalledNumber.id)).where(GameCalledNumber.game_id == int(g.id))
+        ).scalar_one()
+        cards_count = db.execute(
+            select(func.count(GameCard.id)).where(GameCard.game_id == int(g.id))
+        ).scalar_one()
+        players_count = db.execute(
+            select(func.count(func.distinct(GameCard.user_id))).where(GameCard.game_id == int(g.id))
+        ).scalar_one()
+        active_games.append(
+            {
+                "id": int(g.id),
+                "status": str(g.status),
+                "card_price": int(g.card_price),
+                "sold_amount": int(g.sold_amount),
+                "prize_pool": int(g.prize_pool),
+                "called_count": int(called_count or 0),
+                "last_number": int(last_number) if last_number is not None else None,
+                "cards_count": int(cards_count or 0),
+                "players_count": int(players_count or 0),
+            }
+        )
+
+    counts = {
+        "pending_deposits": int(db.execute(select(func.count(DepositRequest.id)).where(DepositRequest.status == "PENDING_REVIEW")).scalar_one() or 0),
+        "pending_withdraws": int(db.execute(select(func.count(WithdrawRequest.id)).where(WithdrawRequest.status == "PENDING")).scalar_one() or 0),
+        "approved_withdraws": int(db.execute(select(func.count(WithdrawRequest.id)).where(WithdrawRequest.status == "APPROVED")).scalar_one() or 0),
+        "crypto_needs_review": int(db.execute(select(func.count(CryptoDepositRequest.id)).where(CryptoDepositRequest.status == "NEEDS_REVIEW")).scalar_one() or 0),
+        "game_errors": int(db.execute(select(func.count(GameEvent.id)).where(GameEvent.kind == "ERROR")).scalar_one() or 0),
+        "risk_events_24h": int(
+            db.execute(
+                select(func.count(AdminAuditLog.id)).where(
+                    AdminAuditLog.action.like("risk.%"),
+                    AdminAuditLog.created_at >= datetime.utcnow() - timedelta(hours=24),
+                )
+            ).scalar_one()
+            or 0
+        ),
+    }
+    return {
+        "active_games": active_games,
+        "counts": counts,
+        "system": _mini_system_health(db),
+        "server_time": datetime.utcnow().isoformat(timespec="seconds"),
+    }
+
+
+@router.get("/admin/winner-settlements")
+def mini_admin_winner_settlements(
+    limit: int = Query(default=30, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
+    db: Session = Depends(get_db),
+):
+    _ = ident
+    query = (
+        select(WalletTx, Wallet, User)
+        .join(Wallet, Wallet.id == WalletTx.wallet_id)
+        .join(User, User.id == Wallet.user_id)
+        .where(WalletTx.reason.in_(["PRIZE_COL", "PRIZE_ROW"]))
+        .order_by(WalletTx.id.desc())
+    )
+    total = db.execute(
+        select(func.count()).select_from(
+            select(WalletTx.id)
+            .where(WalletTx.reason.in_(["PRIZE_COL", "PRIZE_ROW"]))
+            .subquery()
+        )
+    ).scalar_one()
+    rows = db.execute(query.limit(int(limit)).offset(int(offset))).all()
+    items: list[dict[str, Any]] = []
+    for tx, wallet, user in rows:
+        game_id = int(tx.ref_id) if tx.ref_id is not None else None
+        ack = _setting_get_json(db, _winner_settlement_key(int(tx.id)))
+        card_id = (
+            _mini_winner_card_id_for_tx(db, game_id=int(game_id), user_id=int(wallet.user_id), reason=str(tx.reason))
+            if game_id is not None
+            else None
+        )
+        items.append(
+            {
+                "wallet_tx_id": int(tx.id),
+                "game_id": game_id,
+                "user_id": int(wallet.user_id),
+                "tg_user_id": int(user.tg_user_id),
+                "username": str(user.username) if user.username else None,
+                "display_name": _mini_admin_user_label(user),
+                "amount": int(tx.amount),
+                "reason": str(tx.reason),
+                "winner_card_id": int(card_id) if card_id is not None else None,
+                "ledger_status": "CREDITED",
+                "settlement_status": "PAID_RECORDED" if isinstance(ack, dict) else "PENDING_RECORD",
+                "paid_record": ack if isinstance(ack, dict) else None,
+                "created_at": str(tx.created_at) if tx.created_at else None,
+            }
+        )
+    return {"total": int(total or 0), "limit": int(limit), "offset": int(offset), "items": items}
+
+
+@router.post("/admin/winner-settlements/{wallet_tx_id}/mark-paid")
+def mini_admin_mark_winner_settlement_paid(
+    wallet_tx_id: int,
+    request: Request,
+    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
+    db: Session = Depends(get_db),
+):
+    enforce_write_rate_limit(int(ident.user_id))
+    row = db.execute(
+        select(WalletTx, Wallet, User)
+        .join(Wallet, Wallet.id == WalletTx.wallet_id)
+        .join(User, User.id == Wallet.user_id)
+        .where(WalletTx.id == int(wallet_tx_id), WalletTx.reason.in_(["PRIZE_COL", "PRIZE_ROW"]))
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="تراکنش جایزه پیدا نشد.")
+    tx, wallet, user = row
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    payload = {
+        "wallet_tx_id": int(tx.id),
+        "game_id": int(tx.ref_id) if tx.ref_id is not None else None,
+        "user_id": int(wallet.user_id),
+        "tg_user_id": int(user.tg_user_id),
+        "amount": int(tx.amount),
+        "reason": str(tx.reason),
+        "paid_recorded_by": int(ident.user_id),
+        "paid_recorded_at": now,
+    }
+    _setting_set_json(db, _winner_settlement_key(int(tx.id)), payload)
+    AdminAuditService.record(
+        db,
+        admin=_mini_to_admin_identity(ident),
+        action="winner.settlement.mark_paid",
+        target_type="wallet_tx",
+        target_id=int(tx.id),
+        request=request,
+        details=payload,
+    )
+    db.commit()
+    return {"ok": True, "item": payload}
+
+
+@router.get("/admin/audit/logs")
+def mini_admin_audit_logs(
+    limit: int = Query(default=60, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
+    db: Session = Depends(get_db),
+):
+    _ = ident
+    rows = db.execute(
+        select(AdminAuditLog, User)
+        .outerjoin(User, User.id == AdminAuditLog.actor_user_id)
+        .order_by(AdminAuditLog.id.desc())
+        .limit(int(limit))
+        .offset(int(offset))
+    ).all()
+    items = []
+    for log_row, user in rows:
+        items.append(
+            {
+                "id": int(log_row.id),
+                "actor_user_id": int(log_row.actor_user_id) if log_row.actor_user_id is not None else None,
+                "actor_tg_user_id": int(user.tg_user_id) if user and user.tg_user_id is not None else None,
+                "actor_label": _mini_admin_user_label(user),
+                "actor_scope": str(log_row.actor_scope),
+                "action": str(log_row.action),
+                "target_type": str(log_row.target_type),
+                "target_id": int(log_row.target_id) if log_row.target_id is not None else None,
+                "details": log_row.details_json if isinstance(log_row.details_json, dict) else None,
+                "created_at": str(log_row.created_at) if log_row.created_at else None,
+            }
+        )
+    return {"total": len(items), "limit": int(limit), "offset": int(offset), "items": items}
+
+
+@router.get("/admin/risk-alerts")
+def mini_admin_risk_alerts(
+    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
+    db: Session = Depends(get_db),
+):
+    _ = ident
+    alerts: list[dict[str, Any]] = []
+    now = datetime.utcnow()
+
+    purchase_rows = db.execute(
+        select(
+            GamePurchase.user_id,
+            GamePurchase.game_id,
+            func.count(GamePurchase.id).label("purchase_count"),
+            func.coalesce(func.sum(GamePurchase.qty), 0).label("qty_sum"),
+            func.coalesce(func.sum(GamePurchase.total_price), 0).label("amount_sum"),
+            func.max(GamePurchase.created_at).label("last_at"),
+        )
+        .where(GamePurchase.created_at >= now - timedelta(minutes=30))
+        .group_by(GamePurchase.user_id, GamePurchase.game_id)
+        .order_by(func.max(GamePurchase.created_at).desc())
+        .limit(40)
+    ).all()
+    for user_id, game_id, purchase_count, qty_sum, amount_sum, last_at in purchase_rows:
+        if int(qty_sum or 0) < 10 and int(purchase_count or 0) < 3:
+            continue
+        user = db.get(User, int(user_id))
+        alerts.append(
+            {
+                "type": "rapid_purchase",
+                "severity": "warning",
+                "title": "خرید پرتکرار کارت",
+                "body": f"{_mini_admin_user_label(user)} در ۳۰ دقیقه اخیر {int(qty_sum or 0)} کارت در بازی #{int(game_id)} خریده است.",
+                "target_type": "game",
+                "target_id": int(game_id),
+                "created_at": str(last_at) if last_at else None,
+                "meta": {"user_id": int(user_id), "amount_sum": int(amount_sum or 0), "purchase_count": int(purchase_count or 0)},
+            }
+        )
+
+    insufficient_logs = db.execute(
+        select(AdminAuditLog, User)
+        .outerjoin(User, User.id == AdminAuditLog.actor_user_id)
+        .where(
+            AdminAuditLog.action == "risk.buy.insufficient_balance",
+            AdminAuditLog.created_at >= now - timedelta(hours=24),
+        )
+        .order_by(AdminAuditLog.id.desc())
+        .limit(20)
+    ).all()
+    for log_row, user in insufficient_logs:
+        details = log_row.details_json if isinstance(log_row.details_json, dict) else {}
+        alerts.append(
+            {
+                "type": "insufficient_balance",
+                "severity": "warning",
+                "title": "تلاش خرید با موجودی ناکافی",
+                "body": f"{_mini_admin_user_label(user)} برای بازی #{details.get('game_id') or log_row.target_id or '-'} موجودی کافی نداشت.",
+                "target_type": str(log_row.target_type),
+                "target_id": int(log_row.target_id) if log_row.target_id is not None else None,
+                "created_at": str(log_row.created_at) if log_row.created_at else None,
+                "meta": details,
+            }
+        )
+
+    crypto_rows = db.execute(
+        select(CryptoDepositRequest, User)
+        .join(User, User.id == CryptoDepositRequest.user_id)
+        .where(
+            CryptoDepositRequest.status.in_(["NEEDS_REVIEW", "CONFIRMING"]),
+        )
+        .order_by(CryptoDepositRequest.id.desc())
+        .limit(20)
+    ).all()
+    for invoice, user in crypto_rows:
+        variance = str(invoice.payment_variance or "")
+        severity = "danger" if str(invoice.status) == "NEEDS_REVIEW" or variance in {"UNDERPAID", "OVERPAID"} else "info"
+        alerts.append(
+            {
+                "type": "crypto_review",
+                "severity": severity,
+                "title": "پرداخت کریپتو نیازمند توجه",
+                "body": f"فاکتور #{int(invoice.id)} برای {_mini_admin_user_label(user)} در وضعیت {str(invoice.status)} است.",
+                "target_type": "crypto_deposit_request",
+                "target_id": int(invoice.id),
+                "created_at": str(invoice.updated_at or invoice.created_at),
+                "meta": {
+                    "network": str(invoice.network),
+                    "asset": str(invoice.asset),
+                    "payment_variance": variance or None,
+                    "tx_hash": invoice.tx_hash,
+                    "amount_toman": int(invoice.amount_toman),
+                },
+            }
+        )
+
+    try:
+        health = CryptoHealthService.check()
+        if not bool(health.get("ok", False)) or bool(health.get("degraded", False)):
+            alerts.append(
+                {
+                    "type": "crypto_provider",
+                    "severity": "warning" if bool(health.get("degraded", False)) else "danger",
+                    "title": "اختلال provider کریپتو",
+                    "body": "یکی از مسیرهای نرخ یا شبکه کریپتو نیازمند بررسی است.",
+                    "target_type": "crypto_health",
+                    "target_id": None,
+                    "created_at": now.isoformat(timespec="seconds"),
+                    "meta": health,
+                }
+            )
+    except Exception as exc:
+        alerts.append(
+            {
+                "type": "crypto_provider",
+                "severity": "danger",
+                "title": "خطای بررسی سلامت کریپتو",
+                "body": str(exc)[:220],
+                "target_type": "crypto_health",
+                "target_id": None,
+                "created_at": now.isoformat(timespec="seconds"),
+                "meta": {},
+            }
+        )
+
+    alerts.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return {"total": len(alerts), "items": alerts[:80], "generated_at": now.isoformat(timespec="seconds")}
+
+
+@router.get("/admin/role-presets")
+def mini_admin_role_presets(
+    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
+):
+    _ = ident
+    return {
+        "items": [
+            {"role": "GAME_OPERATOR", "title": "اپراتور بازی", "description": "مناسب ایجاد بازی، شروع بازی و اعلام عدد."},
+            {"role": "FINANCE_ADMIN", "title": "ادمین مالی", "description": "مناسب بررسی واریز، برداشت، کریپتو و تسویه."},
+            {"role": "ADMIN", "title": "ادمین کامل", "description": "دسترسی کامل عملیاتی داخل پنل مدیریت."},
+            {"role": "SUPER_ADMIN", "title": "سوپرادمین", "description": "مدیریت نقش‌ها و تنظیمات حساس."},
+        ]
+    }
 
 
 @router.get("/admin/users/search")
@@ -4516,7 +4970,7 @@ def mini_super_admin_revoke(
         raise HTTPException(status_code=404, detail="user not found")
 
     if payload.role == "ALL":
-        target_role_ids = [int(role_ids["ADMIN"]), int(role_ids["SUPER_ADMIN"])]
+        target_role_ids = [int(role_id) for role_id in role_ids.values()]
     else:
         target_role_ids = [int(role_ids[str(payload.role)])]
 
