@@ -2849,11 +2849,10 @@ async function openHistoryModalForGame(gameId, { cardId = 0, source = "history" 
 }
 
 async function openAdminWinnerCardModal(gameId, cardId) {
-  const modal = getEl("historyModal");
-  const titleEl = getEl("historyModalTitle");
-  const metaEl = getEl("historyModalMeta");
-  const bodyEl = getEl("historyModalBody");
-  if (!modal || !titleEl || !metaEl || !bodyEl) return;
+  const modal = getEl("adminWinnerModal");
+  const panel = getEl("adminWinnerCardPanel");
+  const btn = getEl("adminWinnerCardBtn");
+  if (!modal || !panel) return;
 
   const gid = Number(gameId || 0);
   const cid = Number(cardId || 0);
@@ -2862,11 +2861,18 @@ async function openAdminWinnerCardModal(gameId, cardId) {
     return;
   }
 
-  titleEl.textContent = `کارت برنده #${cid}`;
-  metaEl.textContent = `بازی #${gid}`;
-  bodyEl.innerHTML = '<div class="empty">در حال بارگذاری کارت برنده...</div>';
-  modal.classList.add("open");
-  modal.setAttribute("aria-hidden", "false");
+  if (!panel.classList.contains("hidden") && Number(panel.dataset.cardId || 0) === cid) {
+    hideAdminWinnerCardPanel();
+    return;
+  }
+
+  panel.dataset.cardId = String(cid);
+  panel.classList.remove("hidden");
+  panel.innerHTML = '<div class="empty">در حال بارگذاری کارت برنده...</div>';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "در حال نمایش کارت...";
+  }
 
   try {
     const [snapshot, card] = await Promise.all([
@@ -2890,32 +2896,32 @@ async function openAdminWinnerCardModal(gameId, cardId) {
     const displayName = String(user?.display_name || "").trim();
     const userLabel = displayName || (username ? `@${username}` : `کاربر #${user?.user_id || "-"}`);
 
-    metaEl.textContent = `بازی #${gid} | ${winnerLabel} | ${userLabel}`;
-    bodyEl.innerHTML = `
-      <div class="history-modal-head history-modal-head-ux21">
-        آخرین عدد: <strong>${safeText(st.last_number ?? "-")}</strong> |
-        اعداد اعلام‌شده: <strong>${safeText(calledNumbers.length)}</strong>
-      </div>
-      <div class="history-modal-grid history-modal-grid-ux21">
-        <div class="history-modal-card-item history-modal-card-item-ux21">
-          <div class="card-pro-head">
-            <span class="card-id-stack"><strong>کارت #${safeText(cid)}</strong><em>بازی #${safeText(gid)}</em></span>
-            <span>${safeText(formatFaDateTime(card?.created_at))}</span>
-          </div>
-          <span class="winner-kind-pill">${safeText(winnerLabel)}</span>
-          <div class="history-modal-result history-modal-result-ux21">
-            بازیکن: ${safeText(userLabel)}
-            ${user?.tg_user_id ? ` | تلگرام: ${safeText(user.tg_user_id)}` : ""}
-          </div>
-          <div class="mini-card-grid">${buildCardGrid(nums, calledSet, new Set(), winnerCells)}</div>
+    panel.innerHTML = `
+      <div class="admin-winner-card-head">
+        <div>
+          <strong>کارت #${safeText(cid)}</strong>
+          <span>${safeText(winnerLabel)} | بازی #${safeText(gid)}</span>
         </div>
       </div>
+      <div class="admin-winner-card-meta">
+        بازیکن: ${safeText(userLabel)}
+        ${user?.tg_user_id ? ` | تلگرام: ${safeText(user.tg_user_id)}` : ""}
+        | آخرین عدد: ${safeText(st.last_number ?? "-")}
+        | اعداد اعلام‌شده: ${safeText(calledNumbers.length)}
+      </div>
+      <div class="mini-card-grid">${buildCardGrid(nums, calledSet, new Set(), winnerCells)}</div>
     `;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "مخفی کردن کارت";
+    }
   } catch (err) {
     const msg = localizeApiError(err?.message || err || "خطای بارگذاری کارت برنده");
-    titleEl.textContent = `کارت برنده #${cid}`;
-    metaEl.textContent = "بارگذاری ناموفق";
-    bodyEl.innerHTML = `<div class="empty">کارت برنده بارگذاری نشد. ${safeText(msg)}</div>`;
+    panel.innerHTML = `<div class="empty">کارت برنده بارگذاری نشد. ${safeText(msg)}</div>`;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "تلاش دوباره برای کارت";
+    }
     setAdminLocalHint("adminActionHint", msg, "error");
   }
 }
@@ -6169,6 +6175,21 @@ function closeAdminWinnerModal() {
   modal.setAttribute("aria-hidden", "true");
 }
 
+function hideAdminWinnerCardPanel() {
+  const panel = getEl("adminWinnerCardPanel");
+  const btn = getEl("adminWinnerCardBtn");
+  const modal = getEl("adminWinnerModal");
+  if (panel) {
+    panel.classList.add("hidden");
+    panel.innerHTML = "";
+    panel.dataset.cardId = "";
+  }
+  if (btn) {
+    btn.disabled = !Number(modal?.dataset.cardId || 0);
+    btn.textContent = "مشاهده کارت برنده";
+  }
+}
+
 function ensureAdminWinnerModal() {
   let modal = getEl("adminWinnerModal");
   if (modal) return modal;
@@ -6184,7 +6205,7 @@ function ensureAdminWinnerModal() {
       <div id="adminWinnerModalBody" class="admin-winner-body"></div>
       <div class="admin-winner-actions">
         <button class="small-btn" type="button" data-admin-winner-action="copy">کپی مشخصات</button>
-        <button class="small-btn primary" type="button" data-admin-winner-action="open-card">مشاهده کارت</button>
+        <button id="adminWinnerCardBtn" class="small-btn primary" type="button" data-admin-winner-action="open-card">مشاهده کارت برنده</button>
         <button class="small-btn" type="button" data-admin-winner-action="open-game">مشاهده بازی</button>
         <button class="small-btn" type="button" data-admin-winner-action="close">بستن</button>
       </div>
@@ -6227,8 +6248,7 @@ function ensureAdminWinnerModal() {
 
     if (action === "open-card") {
       const gid = Number(modal.dataset.gameId || 0);
-      const cardId = Number(btn.getAttribute("data-card-id") || modal.dataset.cardId || 0);
-      closeAdminWinnerModal();
+      const cardId = Number(modal.dataset.cardId || 0);
       if (!gid || !cardId) {
         setAdminLocalHint("adminActionHint", "شناسه کارت برنده برای نمایش موجود نیست.", "error");
         return;
@@ -6269,10 +6289,7 @@ function showAdminWinnerPopup(event) {
           const tgUserId = Number(user?.tgUserId || 0);
           const cardId = Number(user?.cardId || 0);
           const amount = Number(user?.amount || 0);
-          const cardButton = cardId
-            ? `<button class="admin-winner-card-btn" type="button" data-admin-winner-action="open-card" data-card-id="${cardId}">مشاهده کارت</button>`
-            : "";
-          return `<div class="admin-winner-row"><strong>بازیکن: ${safeText(label)}</strong><span>شناسه: ${safeText(userId || "-")}</span>${tgUserId ? `<span>تلگرام: ${safeText(tgUserId)}</span>` : ""}<span>کارت: ${safeText(cardId || "-")}</span>${amount ? `<span>سهم: ${safeText(toman(amount))}</span>` : ""}${cardButton}</div>`;
+          return `<div class="admin-winner-row"><strong>بازیکن: ${safeText(label)}</strong><span>شناسه: ${safeText(userId || "-")}</span>${tgUserId ? `<span>تلگرام: ${safeText(tgUserId)}</span>` : ""}<span>کارت: ${safeText(cardId || "-")}</span>${amount ? `<span>سهم: ${safeText(toman(amount))}</span>` : ""}</div>`;
         })
         .join("")
     : '<div class="admin-winner-row">مشخصات کاربر در payload موجود نیست.</div>';
@@ -6287,11 +6304,13 @@ function showAdminWinnerPopup(event) {
         <div><span>عدد اعلامی</span><strong>${safeText(callNumber || "-")}</strong></div>
         <div><span>مبلغ کل</span><strong>${safeText(total ? toman(total) : "-")}</strong></div>
       </div>
-      <div class="admin-winner-list">${winnerRows}</div>`;
+      <div class="admin-winner-list">${winnerRows}</div>
+      <div id="adminWinnerCardPanel" class="admin-winner-card-panel hidden"></div>`;
   }
 
   modal.dataset.gameId = String(gameId || "");
   modal.dataset.cardId = String(firstWinnerCardId || "");
+  hideAdminWinnerCardPanel();
   const winnerCopyLines = winnerUsers.length
     ? winnerUsers.map((user, idx) => {
         const parts = [

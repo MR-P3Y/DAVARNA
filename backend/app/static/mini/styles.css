@@ -5864,14 +5864,40 @@ html[data-theme="light"] .admin-winner-row {
   margin-top: 14px;
 }
 
-.admin-winner-card-btn {
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--text);
-  font-weight: 900;
-  padding: 7px 10px;
-  cursor: pointer;
+.admin-winner-card-panel {
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--glass-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--glass) 86%, rgba(45, 212, 191, 0.08));
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.admin-winner-card-panel.hidden {
+  display: none;
+}
+
+.admin-winner-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.admin-winner-card-head strong,
+.admin-winner-card-head span {
+  display: block;
+}
+
+.admin-winner-card-head span,
+.admin-winner-card-meta {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.8;
+}
+
+.admin-winner-card-panel .mini-card-grid {
+  margin-top: 2px;
 }
 
 @media (max-width: 420px) {
