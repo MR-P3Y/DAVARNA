@@ -3047,6 +3047,50 @@ def mini_admin_get_live_link(
     }
 
 
+@router.get("/admin/games/{game_id}/cards/{card_id}")
+def mini_admin_get_game_card(
+    game_id: int,
+    card_id: int,
+    ident: MiniAdminIdentity = Depends(get_mini_admin_identity),
+    db: Session = Depends(get_db),
+):
+    game = _mini_require_game_manage_access(db, int(game_id), ident)
+    row = db.execute(
+        select(GameCard, User)
+        .join(User, User.id == GameCard.user_id)
+        .where(
+            GameCard.game_id == int(game_id),
+            GameCard.id == int(card_id),
+        )
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="کارت موردنظر در این بازی پیدا نشد.")
+
+    card, user = row
+    display_name = " ".join(
+        part
+        for part in [
+            str(getattr(user, "first_name", "") or "").strip(),
+            str(getattr(user, "last_name", "") or "").strip(),
+        ]
+        if part
+    )
+    return {
+        "game_id": int(game.id),
+        "game_status": str(game.status),
+        "card_id": int(card.id),
+        "fingerprint": str(card.fingerprint),
+        "numbers": _numbers_from_json(card.numbers_json),
+        "created_at": str(card.created_at) if card.created_at else None,
+        "user": {
+            "user_id": int(user.id),
+            "tg_user_id": int(user.tg_user_id),
+            "username": str(user.username) if user.username else None,
+            "display_name": display_name or None,
+        },
+    }
+
+
 @router.put("/admin/games/{game_id}/live-link")
 def mini_admin_set_live_link(
     game_id: int,

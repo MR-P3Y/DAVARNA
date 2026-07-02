@@ -5859,9 +5859,19 @@ html[data-theme="light"] .admin-winner-row {
 
 .admin-winner-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 14px;
+}
+
+.admin-winner-card-btn {
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+  font-weight: 900;
+  padding: 7px 10px;
+  cursor: pointer;
 }
 
 @media (max-width: 420px) {
